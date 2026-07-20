@@ -13,5 +13,61 @@ jobs:
         with:
           submodules: recursive
 
-      - name: FPGA bitstream for ChipDiscover FPGA dev board
-        uses: chipfoundry/tt-gds-action/fpga/ice40up5k@main
+      # Inlined from chipfoundry/tt-gds-action/fpga/ice40up5k so we can pass
+      # GITHUB_TOKEN to YosysHQ/setup-oss-cad-suite and avoid API rate limits.
+      - name: Checkout tt-support-tools repo
+        uses: actions/checkout@v4
+        with:
+          repository: chipfoundry/tt-support-tools
+          path: tt
+          ref: chipfoundry
+
+      - name: Setup python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install tt-support-tools dependencies
+        shell: bash
+        run: pip install -r tt/requirements.txt
+
+      - name: Install Python packages
+        if: ${{ hashFiles('test/requirements.txt') != '' }}
+        shell: bash
+        run: pip install -r test/requirements.txt
+
+      - name: Fetch verilog and build config
+        shell: bash
+        run: |
+          python tt/tt_tool.py --create-user-config $FLOW_ARG
+
+      - name: install oss-cad-suite
+        uses: YosysHQ/setup-oss-cad-suite@v4
+        with:
+          python-override: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create the bitstream
+        shell: bash
+        run: |
+          python tt/tt_tool.py fpga --board chipdiscover --create-bitstream
+
+      - name: Create the UF2
+        shell: bash
+        run: |
+          CLOCKRATE=`python tt/tt_tool.py info --clock_hz`
+          TITLE=`python tt/tt_tool.py info --title`
+          python tt/fpga/bitstream_to_uf2.py --target efabless --slot 1 --name "$TITLE" --autoclock $CLOCKRATE build/tt_fpga.bin build/tt_fpga.uf2
+
+      - name: Upload the bitstream
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fpga_bitstream
+          path: |
+            build/*
+            docs/*
+            src/*
+            info.yaml
+            LICENSE
