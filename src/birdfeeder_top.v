@@ -10,7 +10,7 @@
 // ui_in[0]  = trigger   : rising edge starts an open -> hold -> close cycle
 // ui_in[1]  = pest      : level-sensitive; forces an immediate close
 // uo_out    = 8-seg LED : digit shows FSM state; DP (uo[7]) lit when busy
-// uio[0]    = pwm_out   : SG90 signal (driven as output)
+// uio[0]    = pwm_out   : SG90 signal (OE on only when not idle)
 module birdfeeder_top #(
     parameter CLK_FREQ      = 10_000_000,
     parameter OPEN_TIME_MS  = 800,
@@ -60,6 +60,8 @@ module birdfeeder_top #(
   wire pwm_out;
   wire [6:0] seg;
   wire       busy = (state != ST_IDLE);
+  // No servo drive while idle (output disabled / high-Z)
+  wire       pwm_enable = busy;
 
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
@@ -175,10 +177,10 @@ module birdfeeder_top #(
   assign uo_out[6:0] = seg;
   assign uo_out[7]   = busy; // decimal point while a cycle is active
 
-  // Drive PWM on bidirectional pin 0
-  assign uio_out[0]   = pwm_out;
+  // Drive PWM on bidirectional pin 0 only when not idle
+  assign uio_out[0]   = pwm_enable ? pwm_out : 1'b0;
   assign uio_out[7:1] = 7'b0;
-  assign uio_oe[0]    = 1'b1;
+  assign uio_oe[0]    = pwm_enable;
   assign uio_oe[7:1]  = 7'b0;
 
   wire _unused = &{ena, ui_in[7:2], uio_in, 1'b0};

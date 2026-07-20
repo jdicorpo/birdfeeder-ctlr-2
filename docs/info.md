@@ -22,6 +22,8 @@ On a rising edge of `trigger` (`ui_in[0]`), the hatch cycles:
 
 The decimal point (`uo_out[7]`) is lit whenever the controller is busy (not idle).
 
+PWM on `uio[0]` is disabled (output enable off) while idle. During OPEN the pin stays enabled and drives the stop/neutral pulse.
+
 Servo commands:
 
 | cmd | Action | Pulse width |

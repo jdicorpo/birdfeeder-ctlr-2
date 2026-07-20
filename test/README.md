@@ -11,7 +11,7 @@ Cocotb tests for the door FSM (`birdfeeder_top`) and SG90 PWM driver.
 | `seg` | `uo_out[6:0]` | 7-seg digit for FSM state |
 | `dp` | `uo_out[7]` | Busy (decimal point) |
 | `pwm_out` | `uio_out[0]` | Servo PWM |
-| `pwm_oe` | `uio_oe[0]` | PWM output enable |
+| `pwm_oe` | `uio_oe[0]` | PWM OE (off in IDLE) |
 
 ## How to run
 

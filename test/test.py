@@ -106,9 +106,9 @@ async def test_idle_after_reset(dut):
 
     assert_display(dut, ST_IDLE)
     assert cmd_of(dut) == CMD_STOP
-    assert int(dut.pwm_oe.value) == 1
-    assert int(dut.uio_oe.value) == 0b00000001
-    assert int(dut.uio_out.value) & 0xFE == 0
+    assert int(dut.pwm_oe.value) == 0
+    assert int(dut.uio_oe.value) == 0
+    assert int(dut.pwm_out.value) == 0
 
 
 @cocotb.test()
@@ -119,18 +119,23 @@ async def test_trigger_full_door_cycle(dut):
 
     assert_display(dut, ST_OPENING)
     assert cmd_of(dut) == CMD_OPEN
+    assert int(dut.pwm_oe.value) == 1
 
     await wait_state(dut, ST_OPEN, OPEN_TICKS + 10)
     assert_display(dut, ST_OPEN)
     assert cmd_of(dut) == CMD_STOP
+    assert int(dut.pwm_oe.value) == 1  # stop pulses while holding open
 
     await wait_state(dut, ST_CLOSING, HOLD_TICKS + 10)
     assert_display(dut, ST_CLOSING)
     assert cmd_of(dut) == CMD_CLOSE
+    assert int(dut.pwm_oe.value) == 1
 
     await wait_state(dut, ST_IDLE, CLOSE_TICKS + 10)
     assert_display(dut, ST_IDLE)
     assert cmd_of(dut) == CMD_STOP
+    assert int(dut.pwm_oe.value) == 0
+    assert int(dut.pwm_out.value) == 0
 
 
 @cocotb.test()

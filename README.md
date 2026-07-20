@@ -38,7 +38,7 @@ PWM command encoding:
 | `ui_in[1]` | pest | Level-sensitive; forces close |
 | `uo_out[6:0]` | seg_a…seg_g | 8-segment digit for FSM state |
 | `uo_out[7]` | dp_busy | Decimal point while busy |
-| `uio[0]` | pwm_out | SG90 PWM (output enable driven) |
+| `uio[0]` | pwm_out | SG90 PWM (enabled only when not idle) |
 
 ## Source layout
 
