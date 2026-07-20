@@ -15,9 +15,9 @@
 // uio[0]    = pwm_out    : SG90 signal (OE on only when PWM active)
 module birdfeeder_top #(
     parameter CLK_FREQ      = 10_000_000,
-    parameter OPEN_TIME_MS  = 800,
+    parameter OPEN_TIME_MS  = 3000,
     parameter HOLD_TIME_MS  = 2000,
-    parameter CLOSE_TIME_MS = 800
+    parameter CLOSE_TIME_MS = 3000
 ) (
     input  wire [7:0] ui_in,
     output wire [7:0] uo_out,

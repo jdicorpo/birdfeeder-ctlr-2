@@ -13,9 +13,9 @@ You can also include images in this folder and reference them in the markdown. E
 
 On a rising edge of `trigger` (`ui_in[0]`), the hatch cycles:
 
-1. **OPENING** (display `1`) — servo runs open for 800 ms
+1. **OPENING** (display `1`) — servo runs open for 3 s
 2. **OPEN** (display `2`) — servo stops; door held open for 2 s
-3. **CLOSING** (display `3`) — servo runs close for 800 ms
+3. **CLOSING** (display `3`) — servo runs close for 3 s
 4. **IDLE** (display `0`) — servo stopped; wait for the next trigger
 
 `pest` (`ui_in[1]`) is level-sensitive. If asserted during OPENING or OPEN, the FSM immediately enters CLOSING.

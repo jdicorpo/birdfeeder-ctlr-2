@@ -9,9 +9,9 @@
 // Design logic lives in birdfeeder_top.
 module tt_um_jdicorpo_birdfeeder #(
     parameter CLK_FREQ      = 10_000_000,
-    parameter OPEN_TIME_MS  = 800,
+    parameter OPEN_TIME_MS  = 3000,
     parameter HOLD_TIME_MS  = 2000,
-    parameter CLOSE_TIME_MS = 800
+    parameter CLOSE_TIME_MS = 3000
 ) (
     input  wire [7:0] ui_in,
     output wire [7:0] uo_out,

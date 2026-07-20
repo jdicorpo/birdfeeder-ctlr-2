@@ -24,9 +24,9 @@ While a diagnostic switch is held, the automatic FSM is frozen.
 | State | Display | Servo | Duration |
 |-------|---------|-------|----------|
 | IDLE | `0` | stop | wait for trigger |
-| OPENING | `1` | open | 800 ms |
+| OPENING | `1` | open | 3 s |
 | OPEN | `2` | stop | 2 s |
-| CLOSING | `3` | close | 800 ms |
+| CLOSING | `3` | close | 3 s |
 
 The decimal point lights whenever PWM is active (automatic cycle or diagnostic jog).
 
