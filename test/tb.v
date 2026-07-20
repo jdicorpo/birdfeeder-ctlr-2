@@ -3,6 +3,9 @@
 
 /* Birdfeeder door controller testbench.
  * Instantiates the Tiny Tapeout top and exposes named wires for cocotb / waves.
+ *
+ * RTL sims use a fast clock / short door timings so cocotb finishes quickly.
+ * Gate-level sims use the hardened netlist as-is.
  */
 module tb ();
 
@@ -33,13 +36,10 @@ module tb ();
 `ifdef GL_TEST
   wire VPWR = 1'b1;
   wire VGND = 1'b0;
-`endif
 
   tt_um_jdicorpo_birdfeeder user_project (
-`ifdef GL_TEST
       .VPWR(VPWR),
       .VGND(VGND),
-`endif
       .ui_in  (ui_in),
       .uo_out (uo_out),
       .uio_in (uio_in),
@@ -49,5 +49,23 @@ module tb ();
       .clk    (clk),
       .rst_n  (rst_n)
   );
+`else
+  // Instantiate the design top with short timings (do not rely on iverilog -P).
+  birdfeeder_top #(
+      .CLK_FREQ(100_000),
+      .OPEN_TIME_MS(1),
+      .HOLD_TIME_MS(2),
+      .CLOSE_TIME_MS(1)
+  ) user_project (
+      .ui_in  (ui_in),
+      .uo_out (uo_out),
+      .uio_in (uio_in),
+      .uio_out(uio_out),
+      .uio_oe (uio_oe),
+      .ena    (ena),
+      .clk    (clk),
+      .rst_n  (rst_n)
+  );
+`endif
 
 endmodule

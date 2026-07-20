@@ -3,7 +3,7 @@
 
 """Cocotb tests for the birdfeeder door FSM + SG90 PWM.
 
-RTL sims use shortened timings from test/Makefile:
+RTL sims instantiate birdfeeder_top from tb.v with shortened timings:
   CLK_FREQ=100_000, OPEN/HOLD/CLOSE = 1/2/1 ms
 """
 
