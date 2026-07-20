@@ -13,12 +13,14 @@ Tiny Tapeout Verilog design that opens and closes a birdfeeder hatch with an SG9
 
 A rising edge on `trigger` starts an open → hold → close cycle. `pest` forces an immediate close if the door is opening or already open.
 
-| State | Servo | Duration |
-|-------|-------|----------|
-| IDLE | stop | wait for trigger |
-| OPENING | open | 800 ms |
-| OPEN | stop | 2 s |
-| CLOSING | close | 800 ms |
+| State | Display | Servo | Duration |
+|-------|---------|-------|----------|
+| IDLE | `0` | stop | wait for trigger |
+| OPENING | `1` | open | 800 ms |
+| OPEN | `2` | stop | 2 s |
+| CLOSING | `3` | close | 800 ms |
+
+The decimal point lights while a cycle is in progress (busy).
 
 PWM command encoding:
 
@@ -34,18 +36,16 @@ PWM command encoding:
 |-----|------|-------------|
 | `ui_in[0]` | trigger | Rising edge starts a door cycle |
 | `ui_in[1]` | pest | Level-sensitive; forces close |
-| `uo_out[0]` | pwm_out | SG90 signal |
-| `uo_out[2:1]` | servo_cmd | Current PWM command |
-| `uo_out[5:3]` | state | 0 idle, 1 opening, 2 open, 3 closing |
-| `uo_out[6]` | busy | High when not idle |
-| `uo_out[7]` | door_open | High during OPEN hold |
+| `uo_out[6:0]` | seg_a…seg_g | 8-segment digit for FSM state |
+| `uo_out[7]` | dp_busy | Decimal point while busy |
+| `uio[0]` | pwm_out | SG90 PWM (output enable driven) |
 
 ## Source layout
 
 | File | Role |
 |------|------|
 | `src/project.v` | Tiny Tapeout `tt_um_*` wrapper |
-| `src/birdfeeder_top.v` | Door FSM |
+| `src/birdfeeder_top.v` | Door FSM + 8-segment display |
 | `src/sg90_continuous_pwm.v` | 50 Hz SG90 PWM generator |
 
 ## Simulation
@@ -59,7 +59,8 @@ RTL sims use a 100 kHz clock and 1/2/1 ms door timings so the suite finishes qui
 
 ## Hardware
 
-- SG90 continuous-rotation servo on `uo_out[0]`
+- 8-segment LED on `uo_out` (Tiny Tapeout demoboard mapping)
+- SG90 continuous-rotation servo on bidirectional `uio[0]`
 - Trigger input (button, bird sensor, etc.) on `ui_in[0]`
 - Optional pest / close sensor on `ui_in[1]`
 

@@ -12,7 +12,7 @@ from cocotb.clock import Clock
 from cocotb.triggers import ClockCycles, RisingEdge
 
 
-# Must match SIM_* overrides in test/Makefile (RTL)
+# Must match timings in test/tb.v (RTL)
 CLK_FREQ = 100_000
 OPEN_TIME_MS = 1
 HOLD_TIME_MS = 2
@@ -31,16 +31,28 @@ CMD_STOP = 0
 CMD_OPEN = 1
 CMD_CLOSE = 2
 
+# uo[6:0] = {G,F,E,D,C,B,A}
+SEG = {
+    ST_IDLE: 0b0111111,
+    ST_OPENING: 0b0000110,
+    ST_OPEN: 0b1011011,
+    ST_CLOSING: 0b1001111,
+}
+
 # 100 kHz -> 10 us period
 CLK_PERIOD_NS = 10_000
 
 
 def state_of(dut):
-    return int(dut.state.value)
+    return int(dut.user_project.state.value)
 
 
 def cmd_of(dut):
-    return int(dut.servo_cmd.value)
+    return int(dut.user_project.servo_cmd.value)
+
+
+def seg_of(dut):
+    return int(dut.seg.value)
 
 
 async def reset_dut(dut):
@@ -52,7 +64,6 @@ async def reset_dut(dut):
     dut.rst_n.value = 0
     await ClockCycles(dut.clk, 5)
     dut.rst_n.value = 1
-    # Synchronizers need 2 flops; give an extra cycle of margin
     await ClockCycles(dut.clk, 3)
 
 
@@ -61,11 +72,9 @@ async def set_inputs(dut, *, trigger=0, pest=0):
 
 
 async def pulse_trigger(dut):
-    """Generate a rising edge on trigger, then release."""
     await set_inputs(dut, trigger=0, pest=0)
     await ClockCycles(dut.clk, 2)
     await set_inputs(dut, trigger=1, pest=0)
-    # Wait for synchronizer + edge detect to enter OPENING
     for _ in range(8):
         await RisingEdge(dut.clk)
         if state_of(dut) == ST_OPENING:
@@ -82,16 +91,24 @@ async def wait_state(dut, expected, timeout_cycles):
     assert False, f"timeout waiting for state {expected}, last={state_of(dut)}"
 
 
+def assert_display(dut, expected_state):
+    assert state_of(dut) == expected_state
+    assert seg_of(dut) == SEG[expected_state], (
+        f"seg mismatch for state {expected_state}: "
+        f"got {seg_of(dut):07b}, expected {SEG[expected_state]:07b}"
+    )
+    assert int(dut.dp.value) == (0 if expected_state == ST_IDLE else 1)
+
+
 @cocotb.test()
 async def test_idle_after_reset(dut):
     await reset_dut(dut)
 
-    assert state_of(dut) == ST_IDLE
+    assert_display(dut, ST_IDLE)
     assert cmd_of(dut) == CMD_STOP
-    assert int(dut.busy.value) == 0
-    assert int(dut.door_open.value) == 0
-    assert int(dut.uio_out.value) == 0
-    assert int(dut.uio_oe.value) == 0
+    assert int(dut.pwm_oe.value) == 1
+    assert int(dut.uio_oe.value) == 0b00000001
+    assert int(dut.uio_out.value) & 0xFE == 0
 
 
 @cocotb.test()
@@ -100,21 +117,20 @@ async def test_trigger_full_door_cycle(dut):
     await reset_dut(dut)
     await pulse_trigger(dut)
 
+    assert_display(dut, ST_OPENING)
     assert cmd_of(dut) == CMD_OPEN
-    assert int(dut.busy.value) == 1
-    assert int(dut.door_open.value) == 0
 
     await wait_state(dut, ST_OPEN, OPEN_TICKS + 10)
+    assert_display(dut, ST_OPEN)
     assert cmd_of(dut) == CMD_STOP
-    assert int(dut.door_open.value) == 1
 
     await wait_state(dut, ST_CLOSING, HOLD_TICKS + 10)
+    assert_display(dut, ST_CLOSING)
     assert cmd_of(dut) == CMD_CLOSE
-    assert int(dut.door_open.value) == 0
 
     await wait_state(dut, ST_IDLE, CLOSE_TICKS + 10)
+    assert_display(dut, ST_IDLE)
     assert cmd_of(dut) == CMD_STOP
-    assert int(dut.busy.value) == 0
 
 
 @cocotb.test()
@@ -126,10 +142,11 @@ async def test_pest_aborts_open_hold(dut):
 
     await set_inputs(dut, trigger=0, pest=1)
     await wait_state(dut, ST_CLOSING, 10)
+    assert_display(dut, ST_CLOSING)
     assert cmd_of(dut) == CMD_CLOSE
 
     await wait_state(dut, ST_IDLE, CLOSE_TICKS + 10)
-    assert cmd_of(dut) == CMD_STOP
+    assert_display(dut, ST_IDLE)
 
 
 @cocotb.test()
@@ -137,13 +154,14 @@ async def test_pest_aborts_opening(dut):
     """pest during OPENING skips hold and closes immediately."""
     await reset_dut(dut)
     await pulse_trigger(dut)
-    assert state_of(dut) == ST_OPENING
+    assert_display(dut, ST_OPENING)
 
     await set_inputs(dut, trigger=0, pest=1)
     await wait_state(dut, ST_CLOSING, 10)
-    assert cmd_of(dut) == CMD_CLOSE
+    assert_display(dut, ST_CLOSING)
 
     await wait_state(dut, ST_IDLE, CLOSE_TICKS + 10)
+    assert_display(dut, ST_IDLE)
 
 
 @cocotb.test()
@@ -153,7 +171,6 @@ async def test_trigger_ignored_while_busy(dut):
     await pulse_trigger(dut)
     assert state_of(dut) == ST_OPENING
 
-    # Extra trigger edges while opening
     await set_inputs(dut, trigger=0, pest=0)
     await ClockCycles(dut.clk, 2)
     await set_inputs(dut, trigger=1, pest=0)
@@ -166,14 +183,13 @@ async def test_trigger_ignored_while_busy(dut):
 
 
 @cocotb.test()
-async def test_pwm_active_during_open_command(dut):
-    """While OPENING, pwm_out should go high early in the 20 ms frame."""
+async def test_pwm_on_bidir_during_open(dut):
+    """While OPENING, pwm on uio[0] should go high early in the frame."""
     await reset_dut(dut)
     await pulse_trigger(dut)
     assert cmd_of(dut) == CMD_OPEN
+    assert int(dut.pwm_oe.value) == 1
 
-    # At 100 kHz, a 20 ms PWM period is 2000 clocks; pulse is 2.0 ms = 200 clocks.
-    # Sample soon after entering OPENING — line should be high.
     saw_high = False
     for _ in range(50):
         if int(dut.pwm_out.value) == 1:
@@ -181,4 +197,4 @@ async def test_pwm_active_during_open_command(dut):
             break
         await RisingEdge(dut.clk)
 
-    assert saw_high, "pwm_out never went high during OPENING"
+    assert saw_high, "pwm_out on uio[0] never went high during OPENING"

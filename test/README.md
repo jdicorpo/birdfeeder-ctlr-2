@@ -8,11 +8,10 @@ Cocotb tests for the door FSM (`birdfeeder_top`) and SG90 PWM driver.
 |---------|--------|---------|
 | `trigger` | `ui_in[0]` | Rising edge starts open→hold→close |
 | `pest` | `ui_in[1]` | Forces close from OPENING/OPEN |
-| `pwm_out` | `uo_out[0]` | Servo PWM |
-| `servo_cmd` | `uo_out[2:1]` | 00 stop / 01 open / 10 close |
-| `state` | `uo_out[5:3]` | 0 idle, 1 opening, 2 open, 3 closing |
-| `busy` | `uo_out[6]` | Not idle |
-| `door_open` | `uo_out[7]` | In OPEN hold |
+| `seg` | `uo_out[6:0]` | 7-seg digit for FSM state |
+| `dp` | `uo_out[7]` | Busy (decimal point) |
+| `pwm_out` | `uio_out[0]` | Servo PWM |
+| `pwm_oe` | `uio_oe[0]` | PWM output enable |
 
 ## How to run
 

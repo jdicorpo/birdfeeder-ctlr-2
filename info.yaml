@@ -34,18 +34,18 @@ pinout:
   ui[6]: ""
   ui[7]: ""
 
-  # Outputs
-  uo[0]: "pwm_out"
-  uo[1]: "servo_cmd[0]"
-  uo[2]: "servo_cmd[1]"
-  uo[3]: "state[0]"
-  uo[4]: "state[1]"
-  uo[5]: "state[2]"
-  uo[6]: "busy"
-  uo[7]: "door_open"
+  # Outputs (8-segment LED)
+  uo[0]: "seg_a"
+  uo[1]: "seg_b"
+  uo[2]: "seg_c"
+  uo[3]: "seg_d"
+  uo[4]: "seg_e"
+  uo[5]: "seg_f"
+  uo[6]: "seg_g"
+  uo[7]: "dp_busy"
 
   # Bidirectional pins
-  uio[0]: ""
+  uio[0]: "pwm_out"
   uio[1]: ""
   uio[2]: ""
   uio[3]: ""

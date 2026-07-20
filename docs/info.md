@@ -9,16 +9,18 @@ You can also include images in this folder and reference them in the markdown. E
 
 ## How it works
 
-`birdfeeder_top` runs a door state machine that drives an SG90 continuous-rotation servo over PWM.
+`birdfeeder_top` runs a door state machine that drives an SG90 continuous-rotation servo over PWM on a bidirectional pin, and shows the FSM state on the 8-segment LED.
 
 On a rising edge of `trigger` (`ui_in[0]`), the hatch cycles:
 
-1. **OPENING** — servo runs open for 800 ms
-2. **OPEN** — servo stops; door held open for 2 s
-3. **CLOSING** — servo runs close for 800 ms
-4. **IDLE** — servo stopped; wait for the next trigger
+1. **OPENING** (display `1`) — servo runs open for 800 ms
+2. **OPEN** (display `2`) — servo stops; door held open for 2 s
+3. **CLOSING** (display `3`) — servo runs close for 800 ms
+4. **IDLE** (display `0`) — servo stopped; wait for the next trigger
 
 `pest` (`ui_in[1]`) is level-sensitive. If asserted during OPENING or OPEN, the FSM immediately enters CLOSING.
+
+The decimal point (`uo_out[7]`) is lit whenever the controller is busy (not idle).
 
 Servo commands:
 
@@ -34,21 +36,13 @@ The design expects a 10 MHz clock.
 
 1. Clock at 10 MHz.
 2. Pulse `ui_in[0]` high to start a door cycle.
-3. Watch `uo_out[0]` (PWM), `uo_out[2:1]` (servo cmd), and `uo_out[5:3]` (state).
-4. Assert `ui_in[1]` during OPEN to force an early close.
-
-Status outputs:
-
-| pin | meaning |
-|-----|---------|
-| uo[0] | pwm_out |
-| uo[2:1] | servo_cmd |
-| uo[5:3] | state (0=idle, 1=opening, 2=open, 3=closing) |
-| uo[6] | busy |
-| uo[7] | door_open |
+3. Watch the 8-segment display (`uo_out`) show `0` → `1` → `2` → `3` → `0`.
+4. Probe `uio[0]` for the servo PWM waveform.
+5. Assert `ui_in[1]` during OPEN to force an early close.
 
 ## External hardware
 
-- SG90 continuous rotation servo for the hatch
+- 8-segment LED on `uo_out[7:0]` (standard Tiny Tapeout / demoboard mapping)
+- SG90 continuous rotation servo signal on bidirectional pin `uio[0]`
 - Trigger source on `ui_in[0]` (button, bird sensor, etc.)
 - Optional pest / close sensor on `ui_in[1]`

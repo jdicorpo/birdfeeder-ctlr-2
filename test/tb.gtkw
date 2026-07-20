@@ -24,22 +24,19 @@ tb.pest
 @22
 tb.ui_in[7:0]
 @200
--Status
+-8-segment
 @22
-tb.state[2:0]
-tb.servo_cmd[1:0]
+tb.seg[6:0]
 @28
-tb.busy
-tb.door_open
-tb.pwm_out
-@200
--Outputs
+tb.dp
 @22
 tb.uo_out[7:0]
 @200
--Bidirectional
+-PWM (bidir)
+@28
+tb.pwm_out
+tb.pwm_oe
 @22
-tb.uio_in[7:0]
 tb.uio_out[7:0]
 tb.uio_oe[7:0]
 [pattern_trace] 1

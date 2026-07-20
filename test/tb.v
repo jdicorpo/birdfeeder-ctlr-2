@@ -25,13 +25,12 @@ module tb ();
   wire [7:0] uio_oe;
 
   // Named aliases matching birdfeeder_top pinout
-  wire       trigger    = ui_in[0];
-  wire       pest       = ui_in[1];
-  wire       pwm_out    = uo_out[0];
-  wire [1:0] servo_cmd  = uo_out[2:1];
-  wire [2:0] state      = uo_out[5:3];
-  wire       busy       = uo_out[6];
-  wire       door_open  = uo_out[7];
+  wire       trigger   = ui_in[0];
+  wire       pest      = ui_in[1];
+  wire [6:0] seg       = uo_out[6:0];
+  wire       dp        = uo_out[7];
+  wire       pwm_out   = uio_out[0];
+  wire       pwm_oe    = uio_oe[0];
 
 `ifdef GL_TEST
   wire VPWR = 1'b1;

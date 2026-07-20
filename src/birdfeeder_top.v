@@ -7,9 +7,10 @@
 
 // Door controller for a birdfeeder hatch driven by an SG90 continuous servo.
 //
-// ui_in[0] = trigger  : rising edge starts an open -> hold -> close cycle
-// ui_in[1] = pest     : level-sensitive; forces an immediate close
-// uo_out[0] = pwm_out : SG90 signal pin
+// ui_in[0]  = trigger   : rising edge starts an open -> hold -> close cycle
+// ui_in[1]  = pest      : level-sensitive; forces an immediate close
+// uo_out    = 8-seg LED : digit shows FSM state; DP (uo[7]) lit when busy
+// uio[0]    = pwm_out   : SG90 signal (driven as output)
 module birdfeeder_top #(
     parameter CLK_FREQ      = 10_000_000,
     parameter OPEN_TIME_MS  = 800,
@@ -57,6 +58,8 @@ module birdfeeder_top #(
   wire trigger_rise = trigger & ~trigger_d;
 
   wire pwm_out;
+  wire [6:0] seg;
+  wire       busy = (state != ST_IDLE);
 
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
@@ -151,14 +154,32 @@ module birdfeeder_top #(
       .pwm_out(pwm_out)
   );
 
-  assign uo_out[0]   = pwm_out;
-  assign uo_out[2:1] = servo_cmd;
-  assign uo_out[5:3] = state;
-  assign uo_out[6]   = (state != ST_IDLE);
-  assign uo_out[7]   = (state == ST_OPEN);
+  // Tiny Tapeout / demoboard 8-segment mapping:
+  // uo[6:0] = {G,F,E,D,C,B,A}, uo[7] = DP
+  // Digits show FSM state: 0=idle, 1=opening, 2=open, 3=closing
+  function automatic [6:0] digit7;
+    input [2:0] value;
+    begin
+      case (value)
+        3'd0: digit7 = 7'b0111111; // 0
+        3'd1: digit7 = 7'b0000110; // 1
+        3'd2: digit7 = 7'b1011011; // 2
+        3'd3: digit7 = 7'b1001111; // 3
+        default: digit7 = 7'b0000000;
+      endcase
+    end
+  endfunction
 
-  assign uio_out = 8'b0;
-  assign uio_oe  = 8'b0;
+  assign seg = digit7(state);
+
+  assign uo_out[6:0] = seg;
+  assign uo_out[7]   = busy; // decimal point while a cycle is active
+
+  // Drive PWM on bidirectional pin 0
+  assign uio_out[0]   = pwm_out;
+  assign uio_out[7:1] = 7'b0;
+  assign uio_oe[0]    = 1'b1;
+  assign uio_oe[7:1]  = 7'b0;
 
   wire _unused = &{ena, ui_in[7:2], uio_in, 1'b0};
 
