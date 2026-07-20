@@ -6,13 +6,23 @@ SIM ?= icarus
 WAVES ?= 1
 TOPLEVEL_LANG ?= verilog
 SRC_DIR = $(PWD)/../src
-PROJECT_SOURCES = project.v
+PROJECT_SOURCES = project.v birdfeeder_top.v sg90_continuous_pwm.v
+
+# Fast RTL timing: 100 kHz clock, 1/2/1 ms door phases
+SIM_CLK_FREQ     ?= 100000
+SIM_OPEN_TIME_MS ?= 1
+SIM_HOLD_TIME_MS ?= 2
+SIM_CLOSE_TIME_MS?= 1
 
 ifneq ($(GATES),yes)
 
 # RTL simulation:
 SIM_BUILD				= sim_build/rtl
 VERILOG_SOURCES += $(addprefix $(SRC_DIR)/,$(PROJECT_SOURCES))
+COMPILE_ARGS 		+= -Ptt_um_jdicorpo_birdfeeder.CLK_FREQ=$(SIM_CLK_FREQ)
+COMPILE_ARGS 		+= -Ptt_um_jdicorpo_birdfeeder.OPEN_TIME_MS=$(SIM_OPEN_TIME_MS)
+COMPILE_ARGS 		+= -Ptt_um_jdicorpo_birdfeeder.HOLD_TIME_MS=$(SIM_HOLD_TIME_MS)
+COMPILE_ARGS 		+= -Ptt_um_jdicorpo_birdfeeder.CLOSE_TIME_MS=$(SIM_CLOSE_TIME_MS)
 
 else
 

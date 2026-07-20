@@ -1,37 +1,37 @@
-# Sample testbench for a Tiny Tapeout project
+# Birdfeeder testbench
 
-This is a sample testbench for a Tiny Tapeout project. It uses [cocotb](https://docs.cocotb.org/en/stable/) to drive the DUT and check the outputs.
-See below to get started or for more information, check the [website](https://tinytapeout.com/hdl/testing/).
+Cocotb tests for the door FSM (`birdfeeder_top`) and SG90 PWM driver.
 
-## Setting up
+## Signals
 
-1. Edit [Makefile](Makefile) and modify `PROJECT_SOURCES` to point to your Verilog files.
-2. Edit [tb.v](tb.v) and replace `tt_um_example` with your module name.
+| TB wire | Source | Meaning |
+|---------|--------|---------|
+| `trigger` | `ui_in[0]` | Rising edge starts open→hold→close |
+| `pest` | `ui_in[1]` | Forces close from OPENING/OPEN |
+| `pwm_out` | `uo_out[0]` | Servo PWM |
+| `servo_cmd` | `uo_out[2:1]` | 00 stop / 01 open / 10 close |
+| `state` | `uo_out[5:3]` | 0 idle, 1 opening, 2 open, 3 closing |
+| `busy` | `uo_out[6]` | Not idle |
+| `door_open` | `uo_out[7]` | In OPEN hold |
 
 ## How to run
 
-To run the RTL simulation:
+RTL simulation (uses a 100 kHz clock and 1/2/1 ms door timings):
 
 ```sh
 make -B
 ```
 
-To run gatelevel simulation, first harden your project and copy `../runs/wokwi/results/final/verilog/gl/{your_module_name}.v` to `gate_level_netlist.v`.
-
-Then run:
+Gate-level simulation (after hardening; copy the GL netlist to `gate_level_netlist.v`):
 
 ```sh
 make -B GATES=yes
 ```
 
-## How to view the VCD file
+## Waves
 
-Using GTKWave
 ```sh
 gtkwave tb.vcd tb.gtkw
-```
-
-Using Surfer
-```sh
+# or
 surfer tb.vcd
 ```
