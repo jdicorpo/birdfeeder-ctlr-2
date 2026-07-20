@@ -13,6 +13,14 @@ Tiny Tapeout Verilog design that opens and closes a birdfeeder hatch with an SG9
 
 A rising edge on `trigger` starts an open → hold → close cycle. `pest` forces an immediate close if the door is opening or already open.
 
+Hold-to-run diagnostic switches jog the servo without starting a cycle:
+
+- `diag_up` — drive open/up until released
+- `diag_down` — drive close/down until released
+- both held — cancel (no drive)
+
+While a diagnostic switch is held, the automatic FSM is frozen.
+
 | State | Display | Servo | Duration |
 |-------|---------|-------|----------|
 | IDLE | `0` | stop | wait for trigger |
@@ -20,7 +28,7 @@ A rising edge on `trigger` starts an open → hold → close cycle. `pest` force
 | OPEN | `2` | stop | 2 s |
 | CLOSING | `3` | close | 800 ms |
 
-The decimal point lights while a cycle is in progress (busy).
+The decimal point lights whenever PWM is active (automatic cycle or diagnostic jog).
 
 PWM command encoding:
 
@@ -36,9 +44,11 @@ PWM command encoding:
 |-----|------|-------------|
 | `ui_in[0]` | trigger | Rising edge starts a door cycle |
 | `ui_in[1]` | pest | Level-sensitive; forces close |
+| `ui_in[2]` | diag_up | Hold to jog servo open/up |
+| `ui_in[3]` | diag_down | Hold to jog servo close/down |
 | `uo_out[6:0]` | seg_a…seg_g | 8-segment digit for FSM state |
-| `uo_out[7]` | dp_busy | Decimal point while busy |
-| `uio[0]` | pwm_out | SG90 PWM (enabled only when not idle) |
+| `uo_out[7]` | dp | Decimal point while PWM active |
+| `uio[0]` | pwm_out | SG90 PWM (enabled when active) |
 
 ## Source layout
 
@@ -63,6 +73,7 @@ RTL sims use a 100 kHz clock and 1/2/1 ms door timings so the suite finishes qui
 - SG90 continuous-rotation servo on bidirectional `uio[0]`
 - Trigger input (button, bird sensor, etc.) on `ui_in[0]`
 - Optional pest / close sensor on `ui_in[1]`
+- Diagnostic up/down switches on `ui_in[2]` / `ui_in[3]`
 
 ## Tiny Tapeout
 

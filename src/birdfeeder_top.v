@@ -7,10 +7,12 @@
 
 // Door controller for a birdfeeder hatch driven by an SG90 continuous servo.
 //
-// ui_in[0]  = trigger   : rising edge starts an open -> hold -> close cycle
-// ui_in[1]  = pest      : level-sensitive; forces an immediate close
-// uo_out    = 8-seg LED : digit shows FSM state; DP (uo[7]) lit when busy
-// uio[0]    = pwm_out   : SG90 signal (OE on only when not idle)
+// ui_in[0]  = trigger    : rising edge starts an open -> hold -> close cycle
+// ui_in[1]  = pest       : level-sensitive; forces an immediate close
+// ui_in[2]  = diag_up    : hold to drive servo open/up until released
+// ui_in[3]  = diag_down  : hold to drive servo close/down until released
+// uo_out    = 8-seg LED  : digit shows FSM state; DP lit when PWM active
+// uio[0]    = pwm_out    : SG90 signal (OE on only when PWM active)
 module birdfeeder_top #(
     parameter CLK_FREQ      = 10_000_000,
     parameter OPEN_TIME_MS  = 800,
@@ -46,43 +48,60 @@ module birdfeeder_top #(
   reg [2:0] state_next;
   reg [31:0] timer;
   reg [31:0] timer_next;
-  reg [1:0] servo_cmd;
+  reg [1:0] fsm_cmd;
 
   // Synchronize async inputs
   reg [1:0] trigger_sync;
   reg [1:0] pest_sync;
+  reg [1:0] diag_up_sync;
+  reg [1:0] diag_down_sync;
   reg       trigger_d;
 
-  wire trigger = trigger_sync[1];
-  wire pest    = pest_sync[1];
+  wire trigger   = trigger_sync[1];
+  wire pest      = pest_sync[1];
+  wire diag_up   = diag_up_sync[1];
+  wire diag_down = diag_down_sync[1];
   wire trigger_rise = trigger & ~trigger_d;
+
+  // Exclusive diagnostic override (both pressed => cancel / no override)
+  wire diag_up_only   = diag_up & ~diag_down;
+  wire diag_down_only = diag_down & ~diag_up;
+  wire diag_override  = diag_up_only | diag_down_only;
+
+  wire [1:0] servo_cmd = diag_up_only   ? CMD_OPEN  :
+                         diag_down_only ? CMD_CLOSE :
+                                          fsm_cmd;
 
   wire pwm_out;
   wire [6:0] seg;
   wire       busy = (state != ST_IDLE);
-  // No servo drive while idle (output disabled / high-Z)
-  wire       pwm_enable = busy;
+  // PWM active during an automatic cycle or while a diag switch is held
+  wire       pwm_enable = busy | diag_override;
 
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
-      trigger_sync <= 2'b00;
-      pest_sync    <= 2'b00;
-      trigger_d    <= 1'b0;
+      trigger_sync   <= 2'b00;
+      pest_sync      <= 2'b00;
+      diag_up_sync   <= 2'b00;
+      diag_down_sync <= 2'b00;
+      trigger_d      <= 1'b0;
     end else begin
-      trigger_sync <= {trigger_sync[0], ui_in[0]};
-      pest_sync    <= {pest_sync[0], ui_in[1]};
-      trigger_d    <= trigger;
+      trigger_sync   <= {trigger_sync[0], ui_in[0]};
+      pest_sync      <= {pest_sync[0], ui_in[1]};
+      diag_up_sync   <= {diag_up_sync[0], ui_in[2]};
+      diag_down_sync <= {diag_down_sync[0], ui_in[3]};
+      trigger_d      <= trigger;
     end
   end
 
   always @(*) begin
     state_next = state;
     timer_next = timer;
-    servo_cmd  = CMD_STOP;
+    fsm_cmd    = CMD_STOP;
 
     case (state)
       ST_IDLE: begin
-        servo_cmd = CMD_STOP;
+        fsm_cmd = CMD_STOP;
         if (pest) begin
           // Already closed; ignore pest while idle
           state_next = ST_IDLE;
@@ -94,7 +113,7 @@ module birdfeeder_top #(
       end
 
       ST_OPENING: begin
-        servo_cmd = CMD_OPEN;
+        fsm_cmd = CMD_OPEN;
         if (pest) begin
           state_next = ST_CLOSING;
           timer_next = 32'd0;
@@ -107,7 +126,7 @@ module birdfeeder_top #(
       end
 
       ST_OPEN: begin
-        servo_cmd = CMD_STOP;
+        fsm_cmd = CMD_STOP;
         if (pest) begin
           state_next = ST_CLOSING;
           timer_next = 32'd0;
@@ -120,7 +139,7 @@ module birdfeeder_top #(
       end
 
       ST_CLOSING: begin
-        servo_cmd = CMD_CLOSE;
+        fsm_cmd = CMD_CLOSE;
         if (timer >= CLOSE_TICKS - 1) begin
           state_next = ST_IDLE;
           timer_next = 32'd0;
@@ -132,15 +151,19 @@ module birdfeeder_top #(
       default: begin
         state_next = ST_IDLE;
         timer_next = 32'd0;
-        servo_cmd  = CMD_STOP;
+        fsm_cmd    = CMD_STOP;
       end
     endcase
   end
 
+  // Freeze the automatic cycle while a diagnostic switch is held
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       state <= ST_IDLE;
       timer <= 32'd0;
+    end else if (diag_override) begin
+      state <= state;
+      timer <= timer;
     end else begin
       state <= state_next;
       timer <= timer_next;
@@ -175,14 +198,14 @@ module birdfeeder_top #(
   assign seg = digit7(state);
 
   assign uo_out[6:0] = seg;
-  assign uo_out[7]   = busy; // decimal point while a cycle is active
+  assign uo_out[7]   = pwm_enable; // DP while PWM is driving
 
-  // Drive PWM on bidirectional pin 0 only when not idle
+  // Drive PWM on bidirectional pin 0 only when active
   assign uio_out[0]   = pwm_enable ? pwm_out : 1'b0;
   assign uio_out[7:1] = 7'b0;
   assign uio_oe[0]    = pwm_enable;
   assign uio_oe[7:1]  = 7'b0;
 
-  wire _unused = &{ena, ui_in[7:2], uio_in, 1'b0};
+  wire _unused = &{ena, ui_in[7:4], uio_in, 1'b0};
 
 endmodule

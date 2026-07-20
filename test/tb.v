@@ -27,6 +27,8 @@ module tb ();
   // Named aliases matching birdfeeder_top pinout
   wire       trigger   = ui_in[0];
   wire       pest      = ui_in[1];
+  wire       diag_up   = ui_in[2];
+  wire       diag_down = ui_in[3];
   wire [6:0] seg       = uo_out[6:0];
   wire       dp        = uo_out[7];
   wire       pwm_out   = uio_out[0];

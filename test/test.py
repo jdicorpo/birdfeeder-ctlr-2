@@ -67,8 +67,18 @@ async def reset_dut(dut):
     await ClockCycles(dut.clk, 3)
 
 
-async def set_inputs(dut, *, trigger=0, pest=0):
-    dut.ui_in.value = (int(pest) << 1) | int(trigger)
+async def set_inputs(dut, *, trigger=0, pest=0, diag_up=0, diag_down=0):
+    dut.ui_in.value = (
+        (int(diag_down) << 3)
+        | (int(diag_up) << 2)
+        | (int(pest) << 1)
+        | int(trigger)
+    )
+
+
+async def settle_inputs(dut, cycles=3):
+    """Wait for 2-FF synchronizers."""
+    await ClockCycles(dut.clk, cycles)
 
 
 async def pulse_trigger(dut):
@@ -91,13 +101,15 @@ async def wait_state(dut, expected, timeout_cycles):
     assert False, f"timeout waiting for state {expected}, last={state_of(dut)}"
 
 
-def assert_display(dut, expected_state):
+def assert_display(dut, expected_state, *, dp=None):
     assert state_of(dut) == expected_state
     assert seg_of(dut) == SEG[expected_state], (
         f"seg mismatch for state {expected_state}: "
         f"got {seg_of(dut):07b}, expected {SEG[expected_state]:07b}"
     )
-    assert int(dut.dp.value) == (0 if expected_state == ST_IDLE else 1)
+    if dp is None:
+        dp = 0 if expected_state == ST_IDLE else 1
+    assert int(dut.dp.value) == dp
 
 
 @cocotb.test()
@@ -203,3 +215,77 @@ async def test_pwm_on_bidir_during_open(dut):
         await RisingEdge(dut.clk)
 
     assert saw_high, "pwm_out on uio[0] never went high during OPENING"
+
+
+@cocotb.test()
+async def test_diag_up_hold_to_run(dut):
+    """diag_up drives open while held, then disables PWM on release."""
+    await reset_dut(dut)
+
+    await set_inputs(dut, diag_up=1)
+    await settle_inputs(dut)
+
+    assert state_of(dut) == ST_IDLE
+    assert cmd_of(dut) == CMD_OPEN
+    assert int(dut.pwm_oe.value) == 1
+    assert int(dut.dp.value) == 1
+
+    await set_inputs(dut, diag_up=0)
+    await settle_inputs(dut)
+
+    assert state_of(dut) == ST_IDLE
+    assert cmd_of(dut) == CMD_STOP
+    assert int(dut.pwm_oe.value) == 0
+    assert int(dut.dp.value) == 0
+
+
+@cocotb.test()
+async def test_diag_down_hold_to_run(dut):
+    """diag_down drives close while held, then disables PWM on release."""
+    await reset_dut(dut)
+
+    await set_inputs(dut, diag_down=1)
+    await settle_inputs(dut)
+
+    assert state_of(dut) == ST_IDLE
+    assert cmd_of(dut) == CMD_CLOSE
+    assert int(dut.pwm_oe.value) == 1
+
+    await set_inputs(dut, diag_down=0)
+    await settle_inputs(dut)
+
+    assert cmd_of(dut) == CMD_STOP
+    assert int(dut.pwm_oe.value) == 0
+
+
+@cocotb.test()
+async def test_diag_both_cancel(dut):
+    """Holding both diagnostic switches cancels the override."""
+    await reset_dut(dut)
+
+    await set_inputs(dut, diag_up=1, diag_down=1)
+    await settle_inputs(dut)
+
+    assert state_of(dut) == ST_IDLE
+    assert cmd_of(dut) == CMD_STOP
+    assert int(dut.pwm_oe.value) == 0
+
+
+@cocotb.test()
+async def test_diag_freezes_automatic_cycle(dut):
+    """Holding diag_up during OPENING freezes the FSM timer."""
+    await reset_dut(dut)
+    await pulse_trigger(dut)
+    assert state_of(dut) == ST_OPENING
+
+    await set_inputs(dut, diag_up=1)
+    await settle_inputs(dut)
+    assert cmd_of(dut) == CMD_OPEN
+
+    # Wait longer than an open phase; state should remain OPENING
+    await ClockCycles(dut.clk, OPEN_TICKS + 20)
+    assert state_of(dut) == ST_OPENING
+
+    await set_inputs(dut, diag_up=0)
+    await settle_inputs(dut)
+    await wait_state(dut, ST_OPEN, OPEN_TICKS + 10)

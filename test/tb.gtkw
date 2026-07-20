@@ -21,6 +21,8 @@ tb.ena
 @28
 tb.trigger
 tb.pest
+tb.diag_up
+tb.diag_down
 @22
 tb.ui_in[7:0]
 @200

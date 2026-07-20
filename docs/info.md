@@ -20,9 +20,15 @@ On a rising edge of `trigger` (`ui_in[0]`), the hatch cycles:
 
 `pest` (`ui_in[1]`) is level-sensitive. If asserted during OPENING or OPEN, the FSM immediately enters CLOSING.
 
-The decimal point (`uo_out[7]`) is lit whenever the controller is busy (not idle).
+Diagnostic hold-to-run switches:
 
-PWM on `uio[0]` is disabled (output enable off) while idle. During OPEN the pin stays enabled and drives the stop/neutral pulse.
+- `diag_up` (`ui_in[2]`) — drive open/up while held
+- `diag_down` (`ui_in[3]`) — drive close/down while held
+- both held — cancel (no diagnostic drive)
+
+While a diagnostic switch is active, the automatic FSM is frozen. PWM on `uio[0]` is enabled only during an automatic cycle or diagnostic jog (disabled in idle).
+
+The decimal point (`uo_out[7]`) is lit whenever PWM is active.
 
 Servo commands:
 
@@ -41,6 +47,7 @@ The design expects a 10 MHz clock.
 3. Watch the 8-segment display (`uo_out`) show `0` → `1` → `2` → `3` → `0`.
 4. Probe `uio[0]` for the servo PWM waveform.
 5. Assert `ui_in[1]` during OPEN to force an early close.
+6. Hold `ui_in[2]` or `ui_in[3]` to jog the servo up/down until released.
 
 ## External hardware
 
@@ -48,3 +55,4 @@ The design expects a 10 MHz clock.
 - SG90 continuous rotation servo signal on bidirectional pin `uio[0]`
 - Trigger source on `ui_in[0]` (button, bird sensor, etc.)
 - Optional pest / close sensor on `ui_in[1]`
+- Diagnostic up/down switches on `ui_in[2]` / `ui_in[3]`

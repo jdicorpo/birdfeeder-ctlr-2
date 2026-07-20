@@ -27,8 +27,8 @@ pinout:
   # Inputs
   ui[0]: "trigger"
   ui[1]: "pest"
-  ui[2]: ""
-  ui[3]: ""
+  ui[2]: "diag_up"
+  ui[3]: "diag_down"
   ui[4]: ""
   ui[5]: ""
   ui[6]: ""
@@ -42,7 +42,7 @@ pinout:
   uo[4]: "seg_e"
   uo[5]: "seg_f"
   uo[6]: "seg_g"
-  uo[7]: "dp_busy"
+  uo[7]: "dp_pwm"
 
   # Bidirectional pins
   uio[0]: "pwm_out"
