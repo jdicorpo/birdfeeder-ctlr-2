@@ -11,14 +11,15 @@ You can also include images in this folder and reference them in the markdown. E
 
 `birdfeeder_top` runs a door state machine that drives an SG90 continuous-rotation servo over PWM on a bidirectional pin, and shows the FSM state on the 8-segment LED.
 
-On a rising edge of `trigger` (`ui_in[0]`), the hatch cycles:
+On a rising edge of `trigger` (`ui_in[0]`), the hatch runs an open → close → open cycle:
 
 1. **OPENING** (display `1`) — servo runs open for 3 s
 2. **OPEN** (display `2`) — servo stops; door held open for 2 s
 3. **CLOSING** (display `3`) — servo runs close for 3 s
-4. **IDLE** (display `0`) — servo stopped; wait for the next trigger
+4. **REOPENING** (display `4`) — servo runs open again for 3 s
+5. **IDLE** (display `0`) — servo stopped; wait for the next trigger
 
-`pest` (`ui_in[1]`) is level-sensitive. If asserted during OPENING or OPEN, the FSM immediately enters CLOSING.
+`pest` (`ui_in[1]`) is level-sensitive. If asserted during OPENING, OPEN, or REOPENING, the FSM immediately enters CLOSING. If pest is still asserted when CLOSING finishes, the reopen is skipped and the controller returns to IDLE (door left closed).
 
 Diagnostic hold-to-run switches:
 
@@ -44,9 +45,9 @@ The design expects a 10 MHz clock.
 
 1. Clock at 10 MHz.
 2. Pulse `ui_in[0]` high to start a door cycle.
-3. Watch the 8-segment display (`uo_out`) show `0` → `1` → `2` → `3` → `0`.
+3. Watch the 8-segment display (`uo_out`) show `0` → `1` → `2` → `3` → `4` → `0`.
 4. Probe `uio[0]` for the servo PWM waveform.
-5. Assert `ui_in[1]` during OPEN to force an early close.
+5. Assert `ui_in[1]` during OPEN to force an early close (reopen skipped while pest stays high).
 6. Hold `ui_in[2]` or `ui_in[3]` to jog the servo up/down until released.
 
 ## External hardware

@@ -7,7 +7,7 @@
 
 // Door controller for a birdfeeder hatch driven by an SG90 continuous servo.
 //
-// ui_in[0]  = trigger    : rising edge starts an open -> hold -> close cycle
+// ui_in[0]  = trigger    : rising edge starts open -> close -> open cycle
 // ui_in[1]  = pest       : level-sensitive; forces an immediate close
 // ui_in[2]  = diag_up    : hold to drive servo open/up until released
 // ui_in[3]  = diag_down  : hold to drive servo close/down until released
@@ -38,11 +38,12 @@ module birdfeeder_top #(
   localparam [1:0] CMD_OPEN  = 2'b01;
   localparam [1:0] CMD_CLOSE = 2'b10;
 
-  // Door FSM
-  localparam [2:0] ST_IDLE    = 3'd0;
-  localparam [2:0] ST_OPENING = 3'd1;
-  localparam [2:0] ST_OPEN    = 3'd2;
-  localparam [2:0] ST_CLOSING = 3'd3;
+  // Door FSM: idle -> open -> hold -> close -> reopen -> idle
+  localparam [2:0] ST_IDLE      = 3'd0;
+  localparam [2:0] ST_OPENING   = 3'd1;
+  localparam [2:0] ST_OPEN      = 3'd2;
+  localparam [2:0] ST_CLOSING   = 3'd3;
+  localparam [2:0] ST_REOPENING = 3'd4;
 
   reg [2:0] state;
   reg [2:0] state_next;
@@ -141,6 +142,25 @@ module birdfeeder_top #(
       ST_CLOSING: begin
         fsm_cmd = CMD_CLOSE;
         if (timer >= CLOSE_TICKS - 1) begin
+          // Stay closed if pest is still asserted; otherwise reopen
+          if (pest) begin
+            state_next = ST_IDLE;
+            timer_next = 32'd0;
+          end else begin
+            state_next = ST_REOPENING;
+            timer_next = 32'd0;
+          end
+        end else begin
+          timer_next = timer + 1'b1;
+        end
+      end
+
+      ST_REOPENING: begin
+        fsm_cmd = CMD_OPEN;
+        if (pest) begin
+          state_next = ST_CLOSING;
+          timer_next = 32'd0;
+        end else if (timer >= OPEN_TICKS - 1) begin
           state_next = ST_IDLE;
           timer_next = 32'd0;
         end else begin
@@ -181,7 +201,7 @@ module birdfeeder_top #(
 
   // Tiny Tapeout / demoboard 8-segment mapping:
   // uo[6:0] = {G,F,E,D,C,B,A}, uo[7] = DP
-  // Digits show FSM state: 0=idle, 1=opening, 2=open, 3=closing
+  // Digits: 0=idle, 1=opening, 2=open, 3=closing, 4=reopening
   function automatic [6:0] digit7;
     input [2:0] value;
     begin
@@ -190,6 +210,7 @@ module birdfeeder_top #(
         3'd1: digit7 = 7'b0000110; // 1
         3'd2: digit7 = 7'b1011011; // 2
         3'd3: digit7 = 7'b1001111; // 3
+        3'd4: digit7 = 7'b1100110; // 4
         default: digit7 = 7'b0000000;
       endcase
     end

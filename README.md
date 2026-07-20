@@ -11,7 +11,7 @@ Tiny Tapeout Verilog design that opens and closes a birdfeeder hatch with an SG9
 
 ## How it works
 
-A rising edge on `trigger` starts an open → hold → close cycle. `pest` forces an immediate close if the door is opening or already open.
+A rising edge on `trigger` starts an **open → close → open** cycle. `pest` forces an immediate close; if pest stays asserted through the close, the final reopen is skipped.
 
 Hold-to-run diagnostic switches jog the servo without starting a cycle:
 
@@ -27,6 +27,7 @@ While a diagnostic switch is held, the automatic FSM is frozen.
 | OPENING | `1` | open | 3 s |
 | OPEN | `2` | stop | 2 s |
 | CLOSING | `3` | close | 3 s |
+| REOPENING | `4` | open | 3 s |
 
 The decimal point lights whenever PWM is active (automatic cycle or diagnostic jog).
 
