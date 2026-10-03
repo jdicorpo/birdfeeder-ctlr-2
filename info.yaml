@@ -46,8 +46,8 @@ pinout:
 
   # Bidirectional pins
   uio[0]: "pwm_out"
-  uio[1]: ""
-  uio[2]: ""
+  uio[1]: "trigger_o"
+  uio[2]: "pest_o"
   uio[3]: ""
   uio[4]: ""
   uio[5]: ""

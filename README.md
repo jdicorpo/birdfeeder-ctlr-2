@@ -11,7 +11,7 @@ Tiny Tapeout Verilog design that opens and closes a birdfeeder hatch with an SG9
 
 ## How it works
 
-A rising edge on `trigger` starts an **open → close → open** cycle. `pest` forces an immediate close; if pest stays asserted through the close, the final reopen is skipped.
+A rising edge on `trigger` starts an **open → close → open** cycle. `pest` is level-sensitive and **forces open**: it starts/keeps the hatch open and aborts any close while asserted.
 
 Hold-to-run diagnostic switches jog the servo without starting a cycle:
 
@@ -43,13 +43,15 @@ PWM command encoding:
 
 | Pin | Name | Description |
 |-----|------|-------------|
-| `ui_in[0]` | trigger | Rising edge starts a door cycle |
-| `ui_in[1]` | pest | Level-sensitive; forces close |
+| `ui_in[0]` | trigger | Detection arm / start cycle (rising edge) |
+| `ui_in[1]` | pest | Level-sensitive; forces open / blocks close |
 | `ui_in[2]` | diag_up | Hold to jog servo open/up |
 | `ui_in[3]` | diag_down | Hold to jog servo close/down |
 | `uo_out[6:0]` | seg_a…seg_g | 8-segment digit for FSM state |
 | `uo_out[7]` | dp | Decimal point while PWM active |
 | `uio[0]` | pwm_out | SG90 PWM (enabled when active) |
+| `uio[1]` | trigger_o | Copy of synchronized trigger |
+| `uio[2]` | pest_o | Copy of synchronized pest |
 
 ## Source layout
 
@@ -72,9 +74,10 @@ RTL sims use a 100 kHz clock and 1/2/1 ms door timings so the suite finishes qui
 
 - 8-segment LED on `uo_out` (Tiny Tapeout demoboard mapping)
 - SG90 continuous-rotation servo on bidirectional `uio[0]`
-- Trigger input (button, bird sensor, etc.) on `ui_in[0]`
-- Optional pest / close sensor on `ui_in[1]`
+- Detection-arm switch on `ui_in[0]` (trigger)
+- Optional pest sensor on `ui_in[1]` (force open while asserted)
 - Diagnostic up/down switches on `ui_in[2]` / `ui_in[3]`
+- Synced trigger/pest copies available on `uio[1]` / `uio[2]`
 
 ## Tiny Tapeout
 

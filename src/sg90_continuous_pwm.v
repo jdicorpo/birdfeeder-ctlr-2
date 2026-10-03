@@ -28,7 +28,7 @@ module sg90_continuous_pwm #(
         case (cmd)
             2'b00: active_duty_cycle = PULSE_1_5_MS; // Idle/Stop
             2'b01: active_duty_cycle = PULSE_2_0_MS; // Open hatch
-            2'b10: active_duty_cycle = PULSE_1_0_MS; // Close hatch (pest detected)
+            2'b10: active_duty_cycle = PULSE_1_0_MS; // Close hatch
             default: active_duty_cycle = PULSE_1_5_MS; // Default to safe stop
         endcase
     end

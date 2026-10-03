@@ -8,11 +8,13 @@
 // Door controller for a birdfeeder hatch driven by an SG90 continuous servo.
 //
 // ui_in[0]  = trigger    : rising edge starts open -> close -> open cycle
-// ui_in[1]  = pest       : level-sensitive; forces an immediate close
+// ui_in[1]  = pest       : level-sensitive; forces open / blocks close
 // ui_in[2]  = diag_up    : hold to drive servo open/up until released
 // ui_in[3]  = diag_down  : hold to drive servo close/down until released
 // uo_out    = 8-seg LED  : digit shows FSM state; DP lit when PWM active
 // uio[0]    = pwm_out    : SG90 signal (OE on only when PWM active)
+// uio[1]    = trigger_o  : copy of synchronized trigger input
+// uio[2]    = pest_o     : copy of synchronized pest input
 module birdfeeder_top #(
     parameter CLK_FREQ      = 10_000_000,
     parameter OPEN_TIME_MS  = 3000,
@@ -104,8 +106,8 @@ module birdfeeder_top #(
       ST_IDLE: begin
         fsm_cmd = CMD_STOP;
         if (pest) begin
-          // Already closed; ignore pest while idle
-          state_next = ST_IDLE;
+          // Pest detected: open the hatch
+          state_next = ST_OPENING;
           timer_next = 32'd0;
         end else if (trigger_rise) begin
           state_next = ST_OPENING;
@@ -115,10 +117,7 @@ module birdfeeder_top #(
 
       ST_OPENING: begin
         fsm_cmd = CMD_OPEN;
-        if (pest) begin
-          state_next = ST_CLOSING;
-          timer_next = 32'd0;
-        end else if (timer >= OPEN_TICKS - 1) begin
+        if (timer >= OPEN_TICKS - 1) begin
           state_next = ST_OPEN;
           timer_next = 32'd0;
         end else begin
@@ -127,42 +126,50 @@ module birdfeeder_top #(
       end
 
       ST_OPEN: begin
-        fsm_cmd = CMD_STOP;
         if (pest) begin
-          state_next = ST_CLOSING;
-          timer_next = 32'd0;
-        end else if (timer >= HOLD_TICKS - 1) begin
-          state_next = ST_CLOSING;
+          // Hold hatch open while pest remains asserted
+          fsm_cmd    = CMD_OPEN;
+          state_next = ST_OPEN;
           timer_next = 32'd0;
         end else begin
-          timer_next = timer + 1'b1;
+          fsm_cmd = CMD_STOP;
+          if (timer >= HOLD_TICKS - 1) begin
+            state_next = ST_CLOSING;
+            timer_next = 32'd0;
+          end else begin
+            timer_next = timer + 1'b1;
+          end
         end
       end
 
       ST_CLOSING: begin
-        fsm_cmd = CMD_CLOSE;
-        if (timer >= CLOSE_TICKS - 1) begin
-          // Stay closed if pest is still asserted; otherwise reopen
-          if (pest) begin
-            state_next = ST_IDLE;
-            timer_next = 32'd0;
-          end else begin
+        if (pest) begin
+          // Abort close and reopen
+          fsm_cmd    = CMD_OPEN;
+          state_next = ST_OPENING;
+          timer_next = 32'd0;
+        end else begin
+          fsm_cmd = CMD_CLOSE;
+          if (timer >= CLOSE_TICKS - 1) begin
             state_next = ST_REOPENING;
             timer_next = 32'd0;
+          end else begin
+            timer_next = timer + 1'b1;
           end
-        end else begin
-          timer_next = timer + 1'b1;
         end
       end
 
       ST_REOPENING: begin
         fsm_cmd = CMD_OPEN;
-        if (pest) begin
-          state_next = ST_CLOSING;
-          timer_next = 32'd0;
-        end else if (timer >= OPEN_TICKS - 1) begin
-          state_next = ST_IDLE;
-          timer_next = 32'd0;
+        if (timer >= OPEN_TICKS - 1) begin
+          if (pest) begin
+            // Stay open while pest is still present
+            state_next = ST_OPEN;
+            timer_next = 32'd0;
+          end else begin
+            state_next = ST_IDLE;
+            timer_next = 32'd0;
+          end
         end else begin
           timer_next = timer + 1'b1;
         end
@@ -221,11 +228,17 @@ module birdfeeder_top #(
   assign uo_out[6:0] = seg;
   assign uo_out[7]   = pwm_enable; // DP while PWM is driving
 
-  // Drive PWM on bidirectional pin 0 only when active
+  // Bidirectional outputs:
+  //   uio[0] = PWM (enabled only when active)
+  //   uio[1] = synchronized trigger copy
+  //   uio[2] = synchronized pest copy
   assign uio_out[0]   = pwm_enable ? pwm_out : 1'b0;
-  assign uio_out[7:1] = 7'b0;
+  assign uio_out[1]   = trigger;
+  assign uio_out[2]   = pest;
+  assign uio_out[7:3] = 5'b0;
   assign uio_oe[0]    = pwm_enable;
-  assign uio_oe[7:1]  = 7'b0;
+  assign uio_oe[2:1]  = 2'b11;
+  assign uio_oe[7:3]  = 5'b0;
 
   wire _unused = &{ena, ui_in[7:4], uio_in, 1'b0};
 

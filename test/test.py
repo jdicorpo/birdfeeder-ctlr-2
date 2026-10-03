@@ -121,8 +121,10 @@ async def test_idle_after_reset(dut):
     assert_display(dut, ST_IDLE)
     assert cmd_of(dut) == CMD_STOP
     assert int(dut.pwm_oe.value) == 0
-    assert int(dut.uio_oe.value) == 0
+    # uio[2:1] always drive trigger/pest copies; uio[0] OE off in idle
+    assert int(dut.uio_oe.value) == 0b00000110
     assert int(dut.pwm_out.value) == 0
+    assert (int(dut.uio_out.value) >> 1) & 0b11 == 0
 
 
 @cocotb.test()
@@ -158,51 +160,64 @@ async def test_trigger_full_door_cycle(dut):
 
 
 @cocotb.test()
-async def test_pest_aborts_open_hold(dut):
-    """pest while OPEN forces CLOSING; pest held skips reopen and ends IDLE."""
+async def test_pest_from_idle_opens(dut):
+    """pest while IDLE starts opening the hatch."""
+    await reset_dut(dut)
+
+    await set_inputs(dut, pest=1)
+    await settle_inputs(dut)
+    assert state_of(dut) == ST_OPENING
+    assert cmd_of(dut) == CMD_OPEN
+
+
+@cocotb.test()
+async def test_pest_holds_open(dut):
+    """pest while OPEN keeps the hatch open and blocks closing."""
     await reset_dut(dut)
     await pulse_trigger(dut)
     await wait_state(dut, ST_OPEN, OPEN_TICKS + 10)
 
     await set_inputs(dut, trigger=0, pest=1)
-    await wait_state(dut, ST_CLOSING, 10)
-    assert_display(dut, ST_CLOSING)
-    assert cmd_of(dut) == CMD_CLOSE
+    await settle_inputs(dut)
+    assert state_of(dut) == ST_OPEN
+    assert cmd_of(dut) == CMD_OPEN
 
-    await wait_state(dut, ST_IDLE, CLOSE_TICKS + 10)
-    assert_display(dut, ST_IDLE)
+    # Longer than hold time — must not enter CLOSING while pest is held
+    await ClockCycles(dut.clk, HOLD_TICKS + 20)
+    assert state_of(dut) == ST_OPEN
+    assert cmd_of(dut) == CMD_OPEN
 
 
 @cocotb.test()
-async def test_pest_aborts_opening(dut):
-    """pest during OPENING closes immediately; pest held ends IDLE closed."""
+async def test_pest_aborts_closing(dut):
+    """pest during CLOSING aborts close and returns to OPENING."""
     await reset_dut(dut)
     await pulse_trigger(dut)
-    assert_display(dut, ST_OPENING)
+    await wait_state(dut, ST_OPEN, OPEN_TICKS + 10)
+    await wait_state(dut, ST_CLOSING, HOLD_TICKS + 10)
 
-    await set_inputs(dut, trigger=0, pest=1)
-    await wait_state(dut, ST_CLOSING, 10)
-    assert_display(dut, ST_CLOSING)
-
-    await wait_state(dut, ST_IDLE, CLOSE_TICKS + 10)
-    assert_display(dut, ST_IDLE)
+    await set_inputs(dut, pest=1)
+    await settle_inputs(dut)
+    assert state_of(dut) == ST_OPENING
+    assert cmd_of(dut) == CMD_OPEN
 
 
 @cocotb.test()
-async def test_pest_release_allows_reopen(dut):
-    """If pest clears during CLOSING, the cycle continues to REOPENING."""
+async def test_pest_release_allows_close(dut):
+    """After pest clears in OPEN, the hold can finish and the cycle closes."""
     await reset_dut(dut)
     await pulse_trigger(dut)
     await wait_state(dut, ST_OPEN, OPEN_TICKS + 10)
 
     await set_inputs(dut, pest=1)
-    await wait_state(dut, ST_CLOSING, 10)
+    await settle_inputs(dut)
+    await ClockCycles(dut.clk, HOLD_TICKS + 5)
+    assert state_of(dut) == ST_OPEN
+
     await set_inputs(dut, pest=0)
     await settle_inputs(dut)
-
-    await wait_state(dut, ST_REOPENING, CLOSE_TICKS + 10)
-    assert_display(dut, ST_REOPENING)
-    await wait_state(dut, ST_IDLE, OPEN_TICKS + 10)
+    await wait_state(dut, ST_CLOSING, HOLD_TICKS + 10)
+    assert cmd_of(dut) == CMD_CLOSE
 
 
 @cocotb.test()
@@ -240,6 +255,23 @@ async def test_pwm_on_bidir_during_open(dut):
         await RisingEdge(dut.clk)
 
     assert saw_high, "pwm_out on uio[0] never went high during OPENING"
+
+
+@cocotb.test()
+async def test_trigger_pest_copied_to_uio(dut):
+    """Synchronized trigger/pest are driven out on uio[1]/uio[2]."""
+    await reset_dut(dut)
+
+    await set_inputs(dut, trigger=1, pest=1)
+    await settle_inputs(dut)
+    assert int(dut.trigger_o.value) == 1
+    assert int(dut.pest_o.value) == 1
+    assert (int(dut.uio_oe.value) >> 1) & 0b11 == 0b11
+
+    await set_inputs(dut, trigger=0, pest=0)
+    await settle_inputs(dut)
+    assert int(dut.trigger_o.value) == 0
+    assert int(dut.pest_o.value) == 0
 
 
 @cocotb.test()

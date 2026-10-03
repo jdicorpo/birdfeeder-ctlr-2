@@ -19,7 +19,12 @@ On a rising edge of `trigger` (`ui_in[0]`), the hatch runs an open → close →
 4. **REOPENING** (display `4`) — servo runs open again for 3 s
 5. **IDLE** (display `0`) — servo stopped; wait for the next trigger
 
-`pest` (`ui_in[1]`) is level-sensitive. If asserted during OPENING, OPEN, or REOPENING, the FSM immediately enters CLOSING. If pest is still asserted when CLOSING finishes, the reopen is skipped and the controller returns to IDLE (door left closed).
+`pest` (`ui_in[1]`) is level-sensitive and forces the hatch **open**:
+
+- From IDLE → start OPENING
+- While OPEN → keep driving open and do not close
+- During CLOSING → abort and return to OPENING
+- After REOPENING, if pest is still high → enter OPEN (hold open) instead of IDLE
 
 Diagnostic hold-to-run switches:
 
@@ -47,13 +52,14 @@ The design expects a 10 MHz clock.
 2. Pulse `ui_in[0]` high to start a door cycle.
 3. Watch the 8-segment display (`uo_out`) show `0` → `1` → `2` → `3` → `4` → `0`.
 4. Probe `uio[0]` for the servo PWM waveform.
-5. Assert `ui_in[1]` during OPEN to force an early close (reopen skipped while pest stays high).
+5. Assert `ui_in[1]` (pest) to force the hatch open; release it to allow the normal close phase.
 6. Hold `ui_in[2]` or `ui_in[3]` to jog the servo up/down until released.
 
 ## External hardware
 
 - 8-segment LED on `uo_out[7:0]` (standard Tiny Tapeout / demoboard mapping)
 - SG90 continuous rotation servo signal on bidirectional pin `uio[0]`
-- Trigger source on `ui_in[0]` (button, bird sensor, etc.)
-- Optional pest / close sensor on `ui_in[1]`
+- Detection-arm switch on `ui_in[0]` (trigger — rising edge starts the cycle)
+- Optional pest sensor on `ui_in[1]` (force open while asserted)
 - Diagnostic up/down switches on `ui_in[2]` / `ui_in[3]`
+- Synced copies of trigger/pest on `uio[1]` / `uio[2]` for monitoring or external logic
