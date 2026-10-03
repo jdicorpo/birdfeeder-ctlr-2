@@ -24,17 +24,14 @@ module tb ();
   wire [7:0] uio_out;
   wire [7:0] uio_oe;
 
-  // Named aliases matching birdfeeder_top pinout
-  wire       trigger   = ui_in[0];
-  wire       pest      = ui_in[1];
+  wire       arm       = ui_in[1];
   wire       diag_up   = ui_in[2];
   wire       diag_down = ui_in[3];
   wire [6:0] seg       = uo_out[6:0];
   wire       dp        = uo_out[7];
-  wire       pwm_out     = uio_out[0];
-  wire       pwm_oe      = uio_oe[0];
-  wire       trigger_alt = uio_in[1];
-  wire       pest_alt    = uio_in[2];
+  wire       pwm_out   = uio_out[0];
+  wire       pwm_oe    = uio_oe[0];
+  wire       arm_alt   = uio_in[1];
 
 `ifdef GL_TEST
   wire VPWR = 1'b1;
@@ -53,7 +50,6 @@ module tb ();
       .rst_n  (rst_n)
   );
 `else
-  // Instantiate the design top with short timings (do not rely on iverilog -P).
   birdfeeder_top #(
       .CLK_FREQ(100_000),
       .OPEN_TIME_MS(1),

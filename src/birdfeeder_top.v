@@ -7,18 +7,17 @@
 
 // Door controller for a birdfeeder hatch driven by an SG90 continuous servo.
 //
-// Pest cycle:
-//   open 3 s -> stay open while pest asserted -> wait 10 s after release ->
+// Single detection-arm switch (pest):
+//   open 3 s -> hold open while switch closed -> wait 10 s after release ->
 //   close 3 s -> idle
-// Trigger during OPEN resets the 10 s wait timer.
+// Re-closing the switch during the wait restarts the 10 s timer.
 //
-// ui_in[0] / uio[1] = trigger : rising edge resets open-wait timer
-// ui_in[1] / uio[2] = pest    : level-sensitive; starts/holds open cycle
-// ui_in[2]          = diag_up : hold to drive servo open/up until released
-// ui_in[3]          = diag_down : hold to drive servo close/down until released
+// ui_in[1] / uio[1] = arm/pest : level-sensitive detection-arm switch
+// ui_in[2]          = diag_up  : hold to drive servo open/up until released
+// ui_in[3]          = diag_down: hold to drive servo close/down until released
 // uo_out            = 8-seg LED : digit shows FSM state; DP lit when PWM active
-// uio[0]            = pwm_out : SG90 signal (OE on only when PWM active)
-// uio[1], uio[2]    = alternate trigger/pest inputs (OE off; OR'd with ui_in)
+// uio[0]            = pwm_out  : SG90 signal (OE on only when PWM active)
+// uio[1]            = arm_alt  : alternate detection-arm input (OE off)
 module birdfeeder_top #(
     parameter CLK_FREQ      = 10_000_000,
     parameter OPEN_TIME_MS  = 3000,
@@ -39,12 +38,10 @@ module birdfeeder_top #(
   localparam integer WAIT_TICKS  = (CLK_FREQ / 1000) * WAIT_TIME_MS;
   localparam integer CLOSE_TICKS = (CLK_FREQ / 1000) * CLOSE_TIME_MS;
 
-  // Servo commands (see sg90_continuous_pwm)
   localparam [1:0] CMD_STOP  = 2'b00;
   localparam [1:0] CMD_OPEN  = 2'b01;
   localparam [1:0] CMD_CLOSE = 2'b10;
 
-  // Door FSM: idle -> opening -> open (pest hold / wait) -> closing -> idle
   localparam [2:0] ST_IDLE    = 3'd0;
   localparam [2:0] ST_OPENING = 3'd1;
   localparam [2:0] ST_OPEN    = 3'd2;
@@ -56,20 +53,14 @@ module birdfeeder_top #(
   reg [31:0] timer_next;
   reg [1:0] fsm_cmd;
 
-  // Synchronize async inputs
-  reg [1:0] trigger_sync;
-  reg [1:0] pest_sync;
+  reg [1:0] arm_sync;
   reg [1:0] diag_up_sync;
   reg [1:0] diag_down_sync;
-  reg       trigger_d;
 
-  wire trigger   = trigger_sync[1];
-  wire pest      = pest_sync[1];
-  wire diag_up   = diag_up_sync[1];
+  wire arm      = arm_sync[1];
+  wire diag_up  = diag_up_sync[1];
   wire diag_down = diag_down_sync[1];
-  wire trigger_rise = trigger & ~trigger_d;
 
-  // Exclusive diagnostic override (both pressed => cancel / no override)
   wire diag_up_only   = diag_up & ~diag_down;
   wire diag_down_only = diag_down & ~diag_up;
   wire diag_override  = diag_up_only | diag_down_only;
@@ -83,23 +74,18 @@ module birdfeeder_top #(
   wire       busy = (state != ST_IDLE);
   wire       pwm_enable = busy | diag_override;
 
-  // Primary (ui_in) or alternate (uio) sources — active-high, OR'd together
-  wire trigger_raw = ui_in[0] | uio_in[1];
-  wire pest_raw    = ui_in[1] | uio_in[2];
+  // Single detection-arm switch: ui_in[1] or uio[1]
+  wire arm_raw = ui_in[1] | uio_in[1];
 
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
-      trigger_sync   <= 2'b00;
-      pest_sync      <= 2'b00;
+      arm_sync       <= 2'b00;
       diag_up_sync   <= 2'b00;
       diag_down_sync <= 2'b00;
-      trigger_d      <= 1'b0;
     end else begin
-      trigger_sync   <= {trigger_sync[0], trigger_raw};
-      pest_sync      <= {pest_sync[0], pest_raw};
+      arm_sync       <= {arm_sync[0], arm_raw};
       diag_up_sync   <= {diag_up_sync[0], ui_in[2]};
       diag_down_sync <= {diag_down_sync[0], ui_in[3]};
-      trigger_d      <= trigger;
     end
   end
 
@@ -111,7 +97,7 @@ module birdfeeder_top #(
     case (state)
       ST_IDLE: begin
         fsm_cmd = CMD_STOP;
-        if (pest) begin
+        if (arm) begin
           state_next = ST_OPENING;
           timer_next = 32'd0;
         end
@@ -128,30 +114,25 @@ module birdfeeder_top #(
       end
 
       ST_OPEN: begin
-        if (pest) begin
-          // Stay open while pest switch is closed/asserted; wait timer armed on release
-          fsm_cmd    = CMD_OPEN;
-          state_next = ST_OPEN;
-          timer_next = 32'd0;
-        end else if (trigger_rise) begin
-          // Detection-arm activity: restart the 10 s wait
-          fsm_cmd    = CMD_STOP;
+        // Hold position (neutral PWM) after travel completes
+        fsm_cmd = CMD_STOP;
+        if (arm) begin
+          // Switch still closed: stay open; wait starts only after release
           state_next = ST_OPEN;
           timer_next = 32'd0;
         end else if (timer >= WAIT_TICKS - 1) begin
-          fsm_cmd    = CMD_STOP;
           state_next = ST_CLOSING;
           timer_next = 32'd0;
         end else begin
-          fsm_cmd    = CMD_STOP;
+          // Switch open: count 10 s wait (another close of the switch resets via arm)
           state_next = ST_OPEN;
           timer_next = timer + 1'b1;
         end
       end
 
       ST_CLOSING: begin
-        if (pest) begin
-          // Pest returns: abort close and open again
+        if (arm) begin
+          // Arm trips again: abort close and reopen
           fsm_cmd    = CMD_OPEN;
           state_next = ST_OPENING;
           timer_next = 32'd0;
@@ -174,7 +155,6 @@ module birdfeeder_top #(
     endcase
   end
 
-  // Freeze the automatic cycle while a diagnostic switch is held
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       state <= ST_IDLE;
@@ -197,17 +177,14 @@ module birdfeeder_top #(
       .pwm_out(pwm_out)
   );
 
-  // Tiny Tapeout / demoboard 8-segment mapping:
-  // uo[6:0] = {G,F,E,D,C,B,A}, uo[7] = DP
-  // Digits: 0=idle, 1=opening, 2=open, 3=closing
   function automatic [6:0] digit7;
     input [2:0] value;
     begin
       case (value)
-        3'd0: digit7 = 7'b0111111; // 0
-        3'd1: digit7 = 7'b0000110; // 1
-        3'd2: digit7 = 7'b1011011; // 2
-        3'd3: digit7 = 7'b1001111; // 3
+        3'd0: digit7 = 7'b0111111;
+        3'd1: digit7 = 7'b0000110;
+        3'd2: digit7 = 7'b1011011;
+        3'd3: digit7 = 7'b1001111;
         default: digit7 = 7'b0000000;
       endcase
     end
@@ -218,14 +195,11 @@ module birdfeeder_top #(
   assign uo_out[6:0] = seg;
   assign uo_out[7]   = pwm_enable;
 
-  // Bidirectional:
-  //   uio[0]     = PWM output (OE only when active)
-  //   uio[1]/[2] = alternate trigger/pest inputs (OE off)
   assign uio_out[0]   = pwm_enable ? pwm_out : 1'b0;
   assign uio_out[7:1] = 7'b0;
   assign uio_oe[0]    = pwm_enable;
   assign uio_oe[7:1]  = 7'b0;
 
-  wire _unused = &{ena, ui_in[7:4], uio_in[0], uio_in[7:3], 1'b0};
+  wire _unused = &{ena, ui_in[0], ui_in[7:4], uio_in[0], uio_in[7:2], 1'b0};
 
 endmodule
