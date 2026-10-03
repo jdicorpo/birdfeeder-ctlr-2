@@ -31,10 +31,10 @@ module tb ();
   wire       diag_down = ui_in[3];
   wire [6:0] seg       = uo_out[6:0];
   wire       dp        = uo_out[7];
-  wire       pwm_out   = uio_out[0];
-  wire       pwm_oe    = uio_oe[0];
-  wire       trigger_o = uio_out[1];
-  wire       pest_o    = uio_out[2];
+  wire       pwm_out     = uio_out[0];
+  wire       pwm_oe      = uio_oe[0];
+  wire       trigger_alt = uio_in[1];
+  wire       pest_alt    = uio_in[2];
 
 `ifdef GL_TEST
   wire VPWR = 1'b1;

@@ -121,10 +121,9 @@ async def test_idle_after_reset(dut):
     assert_display(dut, ST_IDLE)
     assert cmd_of(dut) == CMD_STOP
     assert int(dut.pwm_oe.value) == 0
-    # uio[2:1] always drive trigger/pest copies; uio[0] OE off in idle
-    assert int(dut.uio_oe.value) == 0b00000110
+    # Only PWM may drive; uio[1]/2 are inputs (OE off)
+    assert int(dut.uio_oe.value) == 0
     assert int(dut.pwm_out.value) == 0
-    assert (int(dut.uio_out.value) >> 1) & 0b11 == 0
 
 
 @cocotb.test()
@@ -258,20 +257,25 @@ async def test_pwm_on_bidir_during_open(dut):
 
 
 @cocotb.test()
-async def test_trigger_pest_copied_to_uio(dut):
-    """Synchronized trigger/pest are driven out on uio[1]/uio[2]."""
+async def test_trigger_via_uio_alt(dut):
+    """Alternate trigger on uio[1] starts a cycle (ui_in[0] left low)."""
     await reset_dut(dut)
 
-    await set_inputs(dut, trigger=1, pest=1)
+    dut.uio_in.value = 0b010  # uio[1]
     await settle_inputs(dut)
-    assert int(dut.trigger_o.value) == 1
-    assert int(dut.pest_o.value) == 1
-    assert (int(dut.uio_oe.value) >> 1) & 0b11 == 0b11
+    assert state_of(dut) == ST_OPENING
+    assert cmd_of(dut) == CMD_OPEN
 
-    await set_inputs(dut, trigger=0, pest=0)
+
+@cocotb.test()
+async def test_pest_via_uio_alt(dut):
+    """Alternate pest on uio[2] forces open from IDLE."""
+    await reset_dut(dut)
+
+    dut.uio_in.value = 0b100  # uio[2]
     await settle_inputs(dut)
-    assert int(dut.trigger_o.value) == 0
-    assert int(dut.pest_o.value) == 0
+    assert state_of(dut) == ST_OPENING
+    assert cmd_of(dut) == CMD_OPEN
 
 
 @cocotb.test()

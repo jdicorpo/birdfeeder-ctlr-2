@@ -7,14 +7,13 @@
 
 // Door controller for a birdfeeder hatch driven by an SG90 continuous servo.
 //
-// ui_in[0]  = trigger    : rising edge starts open -> close -> open cycle
-// ui_in[1]  = pest       : level-sensitive; forces open / blocks close
-// ui_in[2]  = diag_up    : hold to drive servo open/up until released
-// ui_in[3]  = diag_down  : hold to drive servo close/down until released
-// uo_out    = 8-seg LED  : digit shows FSM state; DP lit when PWM active
-// uio[0]    = pwm_out    : SG90 signal (OE on only when PWM active)
-// uio[1]    = trigger_o  : copy of synchronized trigger input
-// uio[2]    = pest_o     : copy of synchronized pest input
+// ui_in[0] / uio[1] = trigger : rising edge starts open -> close -> open cycle
+// ui_in[1] / uio[2] = pest    : level-sensitive; forces open / blocks close
+// ui_in[2]          = diag_up : hold to drive servo open/up until released
+// ui_in[3]          = diag_down : hold to drive servo close/down until released
+// uo_out            = 8-seg LED : digit shows FSM state; DP lit when PWM active
+// uio[0]            = pwm_out : SG90 signal (OE on only when PWM active)
+// uio[1], uio[2]    = alternate trigger/pest inputs (OE off; OR'd with ui_in)
 module birdfeeder_top #(
     parameter CLK_FREQ      = 10_000_000,
     parameter OPEN_TIME_MS  = 3000,
@@ -81,6 +80,10 @@ module birdfeeder_top #(
   // PWM active during an automatic cycle or while a diag switch is held
   wire       pwm_enable = busy | diag_override;
 
+  // Primary (ui_in) or alternate (uio) sources — active-high, OR'd together
+  wire trigger_raw = ui_in[0] | uio_in[1];
+  wire pest_raw    = ui_in[1] | uio_in[2];
+
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       trigger_sync   <= 2'b00;
@@ -89,8 +92,8 @@ module birdfeeder_top #(
       diag_down_sync <= 2'b00;
       trigger_d      <= 1'b0;
     end else begin
-      trigger_sync   <= {trigger_sync[0], ui_in[0]};
-      pest_sync      <= {pest_sync[0], ui_in[1]};
+      trigger_sync   <= {trigger_sync[0], trigger_raw};
+      pest_sync      <= {pest_sync[0], pest_raw};
       diag_up_sync   <= {diag_up_sync[0], ui_in[2]};
       diag_down_sync <= {diag_down_sync[0], ui_in[3]};
       trigger_d      <= trigger;
@@ -228,18 +231,14 @@ module birdfeeder_top #(
   assign uo_out[6:0] = seg;
   assign uo_out[7]   = pwm_enable; // DP while PWM is driving
 
-  // Bidirectional outputs:
-  //   uio[0] = PWM (enabled only when active)
-  //   uio[1] = synchronized trigger copy
-  //   uio[2] = synchronized pest copy
+  // Bidirectional:
+  //   uio[0]     = PWM output (OE only when active)
+  //   uio[1]/[2] = alternate trigger/pest inputs (OE off)
   assign uio_out[0]   = pwm_enable ? pwm_out : 1'b0;
-  assign uio_out[1]   = trigger;
-  assign uio_out[2]   = pest;
-  assign uio_out[7:3] = 5'b0;
+  assign uio_out[7:1] = 7'b0;
   assign uio_oe[0]    = pwm_enable;
-  assign uio_oe[2:1]  = 2'b11;
-  assign uio_oe[7:3]  = 5'b0;
+  assign uio_oe[7:1]  = 7'b0;
 
-  wire _unused = &{ena, ui_in[7:4], uio_in, 1'b0};
+  wire _unused = &{ena, ui_in[7:4], uio_in[0], uio_in[7:3], 1'b0};
 
 endmodule

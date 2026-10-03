@@ -26,6 +26,13 @@ On a rising edge of `trigger` (`ui_in[0]`), the hatch runs an open → close →
 - During CLOSING → abort and return to OPENING
 - After REOPENING, if pest is still high → enter OPEN (hold open) instead of IDLE
 
+Trigger and pest may come from either the dedicated inputs or the bidirectional port (OR'd, active-high):
+
+- trigger = `ui_in[0]` **or** `uio[1]`
+- pest = `ui_in[1]` **or** `uio[2]`
+
+`uio[1]` / `uio[2]` are configured as inputs (`uio_oe` off). The onboard piano-switch pull-downs apply only to `ui_in`. For switches on the bidir PMOD, add an external ~10k pulldown to GND and switch to 3.3V.
+
 Diagnostic hold-to-run switches:
 
 - `diag_up` (`ui_in[2]`) — drive open/up while held
@@ -59,7 +66,7 @@ The design expects a 10 MHz clock.
 
 - 8-segment LED on `uo_out[7:0]` (standard Tiny Tapeout / demoboard mapping)
 - SG90 continuous rotation servo signal on bidirectional pin `uio[0]`
-- Detection-arm switch on `ui_in[0]` (trigger — rising edge starts the cycle)
-- Optional pest sensor on `ui_in[1]` (force open while asserted)
+- Detection-arm switch on `ui_in[0]` or alternate `uio[1]`
+- Optional pest sensor on `ui_in[1]` or alternate `uio[2]`
 - Diagnostic up/down switches on `ui_in[2]` / `ui_in[3]`
-- Synced copies of trigger/pest on `uio[1]` / `uio[2]` for monitoring or external logic
+- External bidir switches need their own pulldown (board pulldowns are on `ui_in` only)

@@ -43,15 +43,15 @@ PWM command encoding:
 
 | Pin | Name | Description |
 |-----|------|-------------|
-| `ui_in[0]` | trigger | Detection arm / start cycle (rising edge) |
-| `ui_in[1]` | pest | Level-sensitive; forces open / blocks close |
+| `ui_in[0]` | trigger | Detection arm / start cycle (or use `uio[1]`) |
+| `ui_in[1]` | pest | Force open / block close (or use `uio[2]`) |
 | `ui_in[2]` | diag_up | Hold to jog servo open/up |
 | `ui_in[3]` | diag_down | Hold to jog servo close/down |
 | `uo_out[6:0]` | seg_a…seg_g | 8-segment digit for FSM state |
 | `uo_out[7]` | dp | Decimal point while PWM active |
 | `uio[0]` | pwm_out | SG90 PWM (enabled when active) |
-| `uio[1]` | trigger_o | Copy of synchronized trigger |
-| `uio[2]` | pest_o | Copy of synchronized pest |
+| `uio[1]` | trigger_alt | Alternate trigger input (OE off) |
+| `uio[2]` | pest_alt | Alternate pest input (OE off) |
 
 ## Source layout
 
@@ -74,10 +74,20 @@ RTL sims use a 100 kHz clock and 1/2/1 ms door timings so the suite finishes qui
 
 - 8-segment LED on `uo_out` (Tiny Tapeout demoboard mapping)
 - SG90 continuous-rotation servo on bidirectional `uio[0]`
-- Detection-arm switch on `ui_in[0]` (trigger)
-- Optional pest sensor on `ui_in[1]` (force open while asserted)
+- Detection-arm switch on `ui_in[0]` **or** `uio[1]` (OR'd)
+- Pest sensor on `ui_in[1]` **or** `uio[2]` (OR'd)
 - Diagnostic up/down switches on `ui_in[2]` / `ui_in[3]`
-- Synced trigger/pest copies available on `uio[1]` / `uio[2]`
+
+### Switch wiring
+
+**Onboard `ui_in` piano switches** already include board pull-downs — use those for bench testing with no extra parts.
+
+**External switches on `uio[1]` / `uio[2]`** (PMOD) do **not** share those pull-downs. Wire active-high:
+
+1. Pulldown (~10k) from the GPIO to GND  
+2. Switch between the GPIO and 3.3V  
+
+Leave unused `ui_in` bits low (switches off) so they don’t hold the OR high.
 
 ## Tiny Tapeout
 
