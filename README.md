@@ -11,7 +11,14 @@ Tiny Tapeout Verilog design that opens and closes a birdfeeder hatch with an SG9
 
 ## How it works
 
-A rising edge on `trigger` starts an **open → close → open** cycle. `pest` is level-sensitive and **forces open**: it starts/keeps the hatch open and aborts any close while asserted.
+A pest detection starts an **open → wait → close** cycle:
+
+1. **OPENING** — drive open for 3 s  
+2. **OPEN** — stay open while pest is asserted; after pest clears, wait **10 s**  
+3. **CLOSING** — drive close for 3 s  
+4. **IDLE** — stop and wait for the next pest event  
+
+A rising edge on **trigger** during **OPEN** resets the 10 s wait timer (extends time open). Pest returning during **CLOSING** aborts the close and opens again.
 
 Hold-to-run diagnostic switches jog the servo without starting a cycle:
 
@@ -21,13 +28,12 @@ Hold-to-run diagnostic switches jog the servo without starting a cycle:
 
 While a diagnostic switch is held, the automatic FSM is frozen.
 
-| State | Display | Servo | Duration |
-|-------|---------|-------|----------|
-| IDLE | `0` | stop | wait for trigger |
+| State | Display | Servo | Duration / condition |
+|-------|---------|-------|----------------------|
+| IDLE | `0` | stop | wait for pest |
 | OPENING | `1` | open | 3 s |
-| OPEN | `2` | stop | 2 s |
+| OPEN | `2` | open while pest / stop while waiting | pest held, then 10 s wait |
 | CLOSING | `3` | close | 3 s |
-| REOPENING | `4` | open | 3 s |
 
 The decimal point lights whenever PWM is active (automatic cycle or diagnostic jog).
 
@@ -43,8 +49,8 @@ PWM command encoding:
 
 | Pin | Name | Description |
 |-----|------|-------------|
-| `ui_in[0]` | trigger | Detection arm / start cycle (or use `uio[1]`) |
-| `ui_in[1]` | pest | Force open / block close (or use `uio[2]`) |
+| `ui_in[0]` | trigger | Rising edge resets open-wait timer (or use `uio[1]`) |
+| `ui_in[1]` | pest | Starts/holds open cycle (or use `uio[2]`) |
 | `ui_in[2]` | diag_up | Hold to jog servo open/up |
 | `ui_in[3]` | diag_down | Hold to jog servo close/down |
 | `uo_out[6:0]` | seg_a…seg_g | 8-segment digit for FSM state |
@@ -68,14 +74,14 @@ cd test
 make -B
 ```
 
-RTL sims use a 100 kHz clock and 1/2/1 ms door timings so the suite finishes quickly. See [test/README.md](test/README.md).
+RTL sims use a 100 kHz clock and short door timings so the suite finishes quickly. See [test/README.md](test/README.md).
 
 ## Hardware
 
 - 8-segment LED on `uo_out` (Tiny Tapeout demoboard mapping)
 - SG90 continuous-rotation servo on bidirectional `uio[0]`
-- Detection-arm switch on `ui_in[0]` **or** `uio[1]` (OR'd)
 - Pest sensor on `ui_in[1]` **or** `uio[2]` (OR'd)
+- Detection-arm / activity switch on `ui_in[0]` **or** `uio[1]` (resets wait)
 - Diagnostic up/down switches on `ui_in[2]` / `ui_in[3]`
 
 ### Switch wiring

@@ -57,7 +57,7 @@ module tb ();
   birdfeeder_top #(
       .CLK_FREQ(100_000),
       .OPEN_TIME_MS(1),
-      .HOLD_TIME_MS(2),
+      .WAIT_TIME_MS(3),
       .CLOSE_TIME_MS(1)
   ) user_project (
       .ui_in  (ui_in),

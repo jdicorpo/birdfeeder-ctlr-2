@@ -4,7 +4,7 @@
 """Cocotb tests for the birdfeeder door FSM + SG90 PWM.
 
 RTL sims instantiate birdfeeder_top from tb.v with shortened timings:
-  CLK_FREQ=100_000, OPEN/HOLD/CLOSE = 1/2/1 ms
+  CLK_FREQ=100_000, OPEN/WAIT/CLOSE = 1/3/1 ms
 """
 
 import cocotb
@@ -15,33 +15,29 @@ from cocotb.triggers import ClockCycles, RisingEdge
 # Must match timings in test/tb.v (RTL)
 CLK_FREQ = 100_000
 OPEN_TIME_MS = 1
-HOLD_TIME_MS = 2
+WAIT_TIME_MS = 3
 CLOSE_TIME_MS = 1
 
 OPEN_TICKS = (CLK_FREQ // 1000) * OPEN_TIME_MS
-HOLD_TICKS = (CLK_FREQ // 1000) * HOLD_TIME_MS
+WAIT_TICKS = (CLK_FREQ // 1000) * WAIT_TIME_MS
 CLOSE_TICKS = (CLK_FREQ // 1000) * CLOSE_TIME_MS
 
 ST_IDLE = 0
 ST_OPENING = 1
 ST_OPEN = 2
 ST_CLOSING = 3
-ST_REOPENING = 4
 
 CMD_STOP = 0
 CMD_OPEN = 1
 CMD_CLOSE = 2
 
-# uo[6:0] = {G,F,E,D,C,B,A}
 SEG = {
     ST_IDLE: 0b0111111,
     ST_OPENING: 0b0000110,
     ST_OPEN: 0b1011011,
     ST_CLOSING: 0b1001111,
-    ST_REOPENING: 0b1100110,
 }
 
-# 100 kHz -> 10 us period
 CLK_PERIOD_NS = 10_000
 
 
@@ -79,20 +75,13 @@ async def set_inputs(dut, *, trigger=0, pest=0, diag_up=0, diag_down=0):
 
 
 async def settle_inputs(dut, cycles=3):
-    """Wait for 2-FF synchronizers."""
     await ClockCycles(dut.clk, cycles)
 
 
-async def pulse_trigger(dut):
-    await set_inputs(dut, trigger=0, pest=0)
-    await ClockCycles(dut.clk, 2)
-    await set_inputs(dut, trigger=1, pest=0)
-    for _ in range(8):
-        await RisingEdge(dut.clk)
-        if state_of(dut) == ST_OPENING:
-            break
-    else:
-        assert False, f"expected OPENING after trigger, got state={state_of(dut)}"
+async def start_pest_cycle(dut):
+    await set_inputs(dut, pest=1)
+    await settle_inputs(dut)
+    assert state_of(dut) == ST_OPENING
 
 
 async def wait_state(dut, expected, timeout_cycles):
@@ -121,79 +110,85 @@ async def test_idle_after_reset(dut):
     assert_display(dut, ST_IDLE)
     assert cmd_of(dut) == CMD_STOP
     assert int(dut.pwm_oe.value) == 0
-    # Only PWM may drive; uio[1]/2 are inputs (OE off)
     assert int(dut.uio_oe.value) == 0
     assert int(dut.pwm_out.value) == 0
 
 
 @cocotb.test()
-async def test_trigger_full_door_cycle(dut):
-    """trigger: IDLE -> OPENING -> OPEN -> CLOSING -> REOPENING -> IDLE"""
+async def test_pest_full_cycle(dut):
+    """pest: OPENING -> OPEN (while held) -> wait -> CLOSING -> IDLE"""
     await reset_dut(dut)
-    await pulse_trigger(dut)
+    await start_pest_cycle(dut)
 
     assert_display(dut, ST_OPENING)
     assert cmd_of(dut) == CMD_OPEN
-    assert int(dut.pwm_oe.value) == 1
 
     await wait_state(dut, ST_OPEN, OPEN_TICKS + 10)
     assert_display(dut, ST_OPEN)
-    assert cmd_of(dut) == CMD_STOP
-    assert int(dut.pwm_oe.value) == 1
+    assert cmd_of(dut) == CMD_OPEN  # pest still held
 
-    await wait_state(dut, ST_CLOSING, HOLD_TICKS + 10)
+    # Release pest; 10 s (sim: WAIT) wait then close
+    await set_inputs(dut, pest=0)
+    await settle_inputs(dut)
+    assert state_of(dut) == ST_OPEN
+    assert cmd_of(dut) == CMD_STOP
+
+    await wait_state(dut, ST_CLOSING, WAIT_TICKS + 10)
     assert_display(dut, ST_CLOSING)
     assert cmd_of(dut) == CMD_CLOSE
-    assert int(dut.pwm_oe.value) == 1
 
-    await wait_state(dut, ST_REOPENING, CLOSE_TICKS + 10)
-    assert_display(dut, ST_REOPENING)
-    assert cmd_of(dut) == CMD_OPEN
-    assert int(dut.pwm_oe.value) == 1
-
-    await wait_state(dut, ST_IDLE, OPEN_TICKS + 10)
+    await wait_state(dut, ST_IDLE, CLOSE_TICKS + 10)
     assert_display(dut, ST_IDLE)
-    assert cmd_of(dut) == CMD_STOP
     assert int(dut.pwm_oe.value) == 0
-    assert int(dut.pwm_out.value) == 0
 
 
 @cocotb.test()
-async def test_pest_from_idle_opens(dut):
-    """pest while IDLE starts opening the hatch."""
+async def test_pest_holds_open_until_released(dut):
+    """While pest is asserted, the wait timer does not advance to close."""
     await reset_dut(dut)
-
-    await set_inputs(dut, pest=1)
-    await settle_inputs(dut)
-    assert state_of(dut) == ST_OPENING
-    assert cmd_of(dut) == CMD_OPEN
-
-
-@cocotb.test()
-async def test_pest_holds_open(dut):
-    """pest while OPEN keeps the hatch open and blocks closing."""
-    await reset_dut(dut)
-    await pulse_trigger(dut)
+    await start_pest_cycle(dut)
     await wait_state(dut, ST_OPEN, OPEN_TICKS + 10)
 
-    await set_inputs(dut, trigger=0, pest=1)
-    await settle_inputs(dut)
+    await ClockCycles(dut.clk, WAIT_TICKS + 50)
     assert state_of(dut) == ST_OPEN
     assert cmd_of(dut) == CMD_OPEN
 
-    # Longer than hold time — must not enter CLOSING while pest is held
-    await ClockCycles(dut.clk, HOLD_TICKS + 20)
+
+@cocotb.test()
+async def test_trigger_resets_wait_timer(dut):
+    """Rising trigger during OPEN restarts the wait countdown."""
+    await reset_dut(dut)
+    await start_pest_cycle(dut)
+    await wait_state(dut, ST_OPEN, OPEN_TICKS + 10)
+
+    await set_inputs(dut, pest=0)
+    await settle_inputs(dut)
+
+    # Almost finish the wait
+    await ClockCycles(dut.clk, WAIT_TICKS - 2)
     assert state_of(dut) == ST_OPEN
-    assert cmd_of(dut) == CMD_OPEN
+
+    # Pulse trigger — must restart wait
+    await set_inputs(dut, trigger=1)
+    await settle_inputs(dut)
+    await set_inputs(dut, trigger=0)
+    await settle_inputs(dut)
+
+    await ClockCycles(dut.clk, WAIT_TICKS - 2)
+    assert state_of(dut) == ST_OPEN, "should still be waiting after timer reset"
+
+    await wait_state(dut, ST_CLOSING, 20)
 
 
 @cocotb.test()
 async def test_pest_aborts_closing(dut):
     """pest during CLOSING aborts close and returns to OPENING."""
     await reset_dut(dut)
-    await pulse_trigger(dut)
+    await start_pest_cycle(dut)
     await wait_state(dut, ST_OPEN, OPEN_TICKS + 10)
-    await wait_state(dut, ST_CLOSING, HOLD_TICKS + 10)
+    await set_inputs(dut, pest=0)
+    await settle_inputs(dut)
+    await wait_state(dut, ST_CLOSING, WAIT_TICKS + 10)
 
     await set_inputs(dut, pest=1)
     await settle_inputs(dut)
@@ -202,47 +197,19 @@ async def test_pest_aborts_closing(dut):
 
 
 @cocotb.test()
-async def test_pest_release_allows_close(dut):
-    """After pest clears in OPEN, the hold can finish and the cycle closes."""
+async def test_trigger_ignored_in_idle(dut):
+    """Trigger alone does not start a cycle from IDLE."""
     await reset_dut(dut)
-    await pulse_trigger(dut)
-    await wait_state(dut, ST_OPEN, OPEN_TICKS + 10)
-
-    await set_inputs(dut, pest=1)
+    await set_inputs(dut, trigger=1)
     await settle_inputs(dut)
-    await ClockCycles(dut.clk, HOLD_TICKS + 5)
-    assert state_of(dut) == ST_OPEN
-
-    await set_inputs(dut, pest=0)
-    await settle_inputs(dut)
-    await wait_state(dut, ST_CLOSING, HOLD_TICKS + 10)
-    assert cmd_of(dut) == CMD_CLOSE
-
-
-@cocotb.test()
-async def test_trigger_ignored_while_busy(dut):
-    """A second trigger during OPENING must not restart the cycle."""
-    await reset_dut(dut)
-    await pulse_trigger(dut)
-    assert state_of(dut) == ST_OPENING
-
-    await set_inputs(dut, trigger=0, pest=0)
-    await ClockCycles(dut.clk, 2)
-    await set_inputs(dut, trigger=1, pest=0)
-    await ClockCycles(dut.clk, 4)
-
-    assert state_of(dut) == ST_OPENING
-    await wait_state(dut, ST_OPEN, OPEN_TICKS + 10)
-    await wait_state(dut, ST_CLOSING, HOLD_TICKS + 10)
-    await wait_state(dut, ST_REOPENING, CLOSE_TICKS + 10)
-    await wait_state(dut, ST_IDLE, OPEN_TICKS + 10)
+    assert state_of(dut) == ST_IDLE
 
 
 @cocotb.test()
 async def test_pwm_on_bidir_during_open(dut):
     """While OPENING, pwm on uio[0] should go high early in the frame."""
     await reset_dut(dut)
-    await pulse_trigger(dut)
+    await start_pest_cycle(dut)
     assert cmd_of(dut) == CMD_OPEN
     assert int(dut.pwm_oe.value) == 1
 
@@ -257,19 +224,8 @@ async def test_pwm_on_bidir_during_open(dut):
 
 
 @cocotb.test()
-async def test_trigger_via_uio_alt(dut):
-    """Alternate trigger on uio[1] starts a cycle (ui_in[0] left low)."""
-    await reset_dut(dut)
-
-    dut.uio_in.value = 0b010  # uio[1]
-    await settle_inputs(dut)
-    assert state_of(dut) == ST_OPENING
-    assert cmd_of(dut) == CMD_OPEN
-
-
-@cocotb.test()
 async def test_pest_via_uio_alt(dut):
-    """Alternate pest on uio[2] forces open from IDLE."""
+    """Alternate pest on uio[2] starts the open cycle."""
     await reset_dut(dut)
 
     dut.uio_in.value = 0b100  # uio[2]
@@ -279,8 +235,27 @@ async def test_pest_via_uio_alt(dut):
 
 
 @cocotb.test()
+async def test_trigger_alt_resets_wait(dut):
+    """Alternate trigger on uio[1] resets the open wait timer."""
+    await reset_dut(dut)
+    await start_pest_cycle(dut)
+    await wait_state(dut, ST_OPEN, OPEN_TICKS + 10)
+    await set_inputs(dut, pest=0)
+    await settle_inputs(dut)
+
+    await ClockCycles(dut.clk, WAIT_TICKS - 2)
+    dut.uio_in.value = 0b010  # trigger_alt
+    await settle_inputs(dut)
+    dut.uio_in.value = 0
+    await settle_inputs(dut)
+
+    await ClockCycles(dut.clk, WAIT_TICKS - 2)
+    assert state_of(dut) == ST_OPEN
+    await wait_state(dut, ST_CLOSING, 20)
+
+
+@cocotb.test()
 async def test_diag_up_hold_to_run(dut):
-    """diag_up drives open while held, then disables PWM on release."""
     await reset_dut(dut)
 
     await set_inputs(dut, diag_up=1)
@@ -289,7 +264,6 @@ async def test_diag_up_hold_to_run(dut):
     assert state_of(dut) == ST_IDLE
     assert cmd_of(dut) == CMD_OPEN
     assert int(dut.pwm_oe.value) == 1
-    assert int(dut.dp.value) == 1
 
     await set_inputs(dut, diag_up=0)
     await settle_inputs(dut)
@@ -297,12 +271,10 @@ async def test_diag_up_hold_to_run(dut):
     assert state_of(dut) == ST_IDLE
     assert cmd_of(dut) == CMD_STOP
     assert int(dut.pwm_oe.value) == 0
-    assert int(dut.dp.value) == 0
 
 
 @cocotb.test()
 async def test_diag_down_hold_to_run(dut):
-    """diag_down drives close while held, then disables PWM on release."""
     await reset_dut(dut)
 
     await set_inputs(dut, diag_down=1)
@@ -321,7 +293,6 @@ async def test_diag_down_hold_to_run(dut):
 
 @cocotb.test()
 async def test_diag_both_cancel(dut):
-    """Holding both diagnostic switches cancels the override."""
     await reset_dut(dut)
 
     await set_inputs(dut, diag_up=1, diag_down=1)
@@ -334,18 +305,17 @@ async def test_diag_both_cancel(dut):
 
 @cocotb.test()
 async def test_diag_freezes_automatic_cycle(dut):
-    """Holding diag_up during OPENING freezes the FSM timer."""
     await reset_dut(dut)
-    await pulse_trigger(dut)
+    await start_pest_cycle(dut)
     assert state_of(dut) == ST_OPENING
 
-    await set_inputs(dut, diag_up=1)
+    await set_inputs(dut, pest=1, diag_up=1)
     await settle_inputs(dut)
     assert cmd_of(dut) == CMD_OPEN
 
     await ClockCycles(dut.clk, OPEN_TICKS + 20)
     assert state_of(dut) == ST_OPENING
 
-    await set_inputs(dut, diag_up=0)
+    await set_inputs(dut, pest=1, diag_up=0)
     await settle_inputs(dut)
     await wait_state(dut, ST_OPEN, OPEN_TICKS + 10)

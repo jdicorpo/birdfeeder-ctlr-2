@@ -10,7 +10,7 @@
 module tt_um_jdicorpo_birdfeeder #(
     parameter CLK_FREQ      = 10_000_000,
     parameter OPEN_TIME_MS  = 3000,
-    parameter HOLD_TIME_MS  = 2000,
+    parameter WAIT_TIME_MS  = 10000,
     parameter CLOSE_TIME_MS = 3000
 ) (
     input  wire [7:0] ui_in,
@@ -26,7 +26,7 @@ module tt_um_jdicorpo_birdfeeder #(
   birdfeeder_top #(
       .CLK_FREQ(CLK_FREQ),
       .OPEN_TIME_MS(OPEN_TIME_MS),
-      .HOLD_TIME_MS(HOLD_TIME_MS),
+      .WAIT_TIME_MS(WAIT_TIME_MS),
       .CLOSE_TIME_MS(CLOSE_TIME_MS)
   ) birdfeeder (
       .ui_in(ui_in),

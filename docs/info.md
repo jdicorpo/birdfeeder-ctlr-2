@@ -11,20 +11,14 @@ You can also include images in this folder and reference them in the markdown. E
 
 `birdfeeder_top` runs a door state machine that drives an SG90 continuous-rotation servo over PWM on a bidirectional pin, and shows the FSM state on the 8-segment LED.
 
-On a rising edge of `trigger` (`ui_in[0]`), the hatch runs an open → close → open cycle:
+Pest detection starts an open → wait → close cycle:
 
 1. **OPENING** (display `1`) — servo runs open for 3 s
-2. **OPEN** (display `2`) — servo stops; door held open for 2 s
+2. **OPEN** (display `2`) — stay open while pest is asserted; after pest clears, wait 10 s (servo stopped)
 3. **CLOSING** (display `3`) — servo runs close for 3 s
-4. **REOPENING** (display `4`) — servo runs open again for 3 s
-5. **IDLE** (display `0`) — servo stopped; wait for the next trigger
+4. **IDLE** (display `0`) — servo stopped; wait for the next pest event
 
-`pest` (`ui_in[1]`) is level-sensitive and forces the hatch **open**:
-
-- From IDLE → start OPENING
-- While OPEN → keep driving open and do not close
-- During CLOSING → abort and return to OPENING
-- After REOPENING, if pest is still high → enter OPEN (hold open) instead of IDLE
+A rising edge on `trigger` during **OPEN** resets the 10 s wait timer. If pest asserts again during **CLOSING**, the close is aborted and the controller returns to **OPENING**.
 
 Trigger and pest may come from either the dedicated inputs or the bidirectional port (OR'd, active-high):
 
@@ -56,17 +50,16 @@ The design expects a 10 MHz clock.
 ## How to test
 
 1. Clock at 10 MHz.
-2. Pulse `ui_in[0]` high to start a door cycle.
-3. Watch the 8-segment display (`uo_out`) show `0` → `1` → `2` → `3` → `4` → `0`.
-4. Probe `uio[0]` for the servo PWM waveform.
-5. Assert `ui_in[1]` (pest) to force the hatch open; release it to allow the normal close phase.
-6. Hold `ui_in[2]` or `ui_in[3]` to jog the servo up/down until released.
+2. Assert `ui_in[1]` (pest) to open; keep it high to hold open.
+3. Release pest and wait 10 s (or pulse `ui_in[0]` to restart the wait).
+4. Watch close for 3 s, then idle.
+5. Hold `ui_in[2]` or `ui_in[3]` to jog the servo up/down until released.
 
 ## External hardware
 
 - 8-segment LED on `uo_out[7:0]` (standard Tiny Tapeout / demoboard mapping)
 - SG90 continuous rotation servo signal on bidirectional pin `uio[0]`
-- Detection-arm switch on `ui_in[0]` or alternate `uio[1]`
-- Optional pest sensor on `ui_in[1]` or alternate `uio[2]`
+- Pest sensor on `ui_in[1]` or alternate `uio[2]`
+- Detection-arm / activity switch on `ui_in[0]` or alternate `uio[1]` (resets wait)
 - Diagnostic up/down switches on `ui_in[2]` / `ui_in[3]`
 - External bidir switches need their own pulldown (board pulldowns are on `ui_in` only)

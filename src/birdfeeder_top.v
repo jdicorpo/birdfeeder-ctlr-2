@@ -7,8 +7,13 @@
 
 // Door controller for a birdfeeder hatch driven by an SG90 continuous servo.
 //
-// ui_in[0] / uio[1] = trigger : rising edge starts open -> close -> open cycle
-// ui_in[1] / uio[2] = pest    : level-sensitive; forces open / blocks close
+// Pest cycle:
+//   open 3 s -> stay open while pest asserted -> wait 10 s after release ->
+//   close 3 s -> idle
+// Trigger during OPEN resets the 10 s wait timer.
+//
+// ui_in[0] / uio[1] = trigger : rising edge resets open-wait timer
+// ui_in[1] / uio[2] = pest    : level-sensitive; starts/holds open cycle
 // ui_in[2]          = diag_up : hold to drive servo open/up until released
 // ui_in[3]          = diag_down : hold to drive servo close/down until released
 // uo_out            = 8-seg LED : digit shows FSM state; DP lit when PWM active
@@ -17,7 +22,7 @@
 module birdfeeder_top #(
     parameter CLK_FREQ      = 10_000_000,
     parameter OPEN_TIME_MS  = 3000,
-    parameter HOLD_TIME_MS  = 2000,
+    parameter WAIT_TIME_MS  = 10000,
     parameter CLOSE_TIME_MS = 3000
 ) (
     input  wire [7:0] ui_in,
@@ -31,7 +36,7 @@ module birdfeeder_top #(
 );
 
   localparam integer OPEN_TICKS  = (CLK_FREQ / 1000) * OPEN_TIME_MS;
-  localparam integer HOLD_TICKS  = (CLK_FREQ / 1000) * HOLD_TIME_MS;
+  localparam integer WAIT_TICKS  = (CLK_FREQ / 1000) * WAIT_TIME_MS;
   localparam integer CLOSE_TICKS = (CLK_FREQ / 1000) * CLOSE_TIME_MS;
 
   // Servo commands (see sg90_continuous_pwm)
@@ -39,12 +44,11 @@ module birdfeeder_top #(
   localparam [1:0] CMD_OPEN  = 2'b01;
   localparam [1:0] CMD_CLOSE = 2'b10;
 
-  // Door FSM: idle -> open -> hold -> close -> reopen -> idle
-  localparam [2:0] ST_IDLE      = 3'd0;
-  localparam [2:0] ST_OPENING   = 3'd1;
-  localparam [2:0] ST_OPEN      = 3'd2;
-  localparam [2:0] ST_CLOSING   = 3'd3;
-  localparam [2:0] ST_REOPENING = 3'd4;
+  // Door FSM: idle -> opening -> open (pest hold / wait) -> closing -> idle
+  localparam [2:0] ST_IDLE    = 3'd0;
+  localparam [2:0] ST_OPENING = 3'd1;
+  localparam [2:0] ST_OPEN    = 3'd2;
+  localparam [2:0] ST_CLOSING = 3'd3;
 
   reg [2:0] state;
   reg [2:0] state_next;
@@ -77,7 +81,6 @@ module birdfeeder_top #(
   wire pwm_out;
   wire [6:0] seg;
   wire       busy = (state != ST_IDLE);
-  // PWM active during an automatic cycle or while a diag switch is held
   wire       pwm_enable = busy | diag_override;
 
   // Primary (ui_in) or alternate (uio) sources — active-high, OR'd together
@@ -109,10 +112,6 @@ module birdfeeder_top #(
       ST_IDLE: begin
         fsm_cmd = CMD_STOP;
         if (pest) begin
-          // Pest detected: open the hatch
-          state_next = ST_OPENING;
-          timer_next = 32'd0;
-        end else if (trigger_rise) begin
           state_next = ST_OPENING;
           timer_next = 32'd0;
         end
@@ -130,51 +129,40 @@ module birdfeeder_top #(
 
       ST_OPEN: begin
         if (pest) begin
-          // Hold hatch open while pest remains asserted
+          // Stay open while pest switch is closed/asserted; wait timer armed on release
           fsm_cmd    = CMD_OPEN;
           state_next = ST_OPEN;
           timer_next = 32'd0;
+        end else if (trigger_rise) begin
+          // Detection-arm activity: restart the 10 s wait
+          fsm_cmd    = CMD_STOP;
+          state_next = ST_OPEN;
+          timer_next = 32'd0;
+        end else if (timer >= WAIT_TICKS - 1) begin
+          fsm_cmd    = CMD_STOP;
+          state_next = ST_CLOSING;
+          timer_next = 32'd0;
         end else begin
-          fsm_cmd = CMD_STOP;
-          if (timer >= HOLD_TICKS - 1) begin
-            state_next = ST_CLOSING;
-            timer_next = 32'd0;
-          end else begin
-            timer_next = timer + 1'b1;
-          end
+          fsm_cmd    = CMD_STOP;
+          state_next = ST_OPEN;
+          timer_next = timer + 1'b1;
         end
       end
 
       ST_CLOSING: begin
         if (pest) begin
-          // Abort close and reopen
+          // Pest returns: abort close and open again
           fsm_cmd    = CMD_OPEN;
           state_next = ST_OPENING;
           timer_next = 32'd0;
         end else begin
           fsm_cmd = CMD_CLOSE;
           if (timer >= CLOSE_TICKS - 1) begin
-            state_next = ST_REOPENING;
+            state_next = ST_IDLE;
             timer_next = 32'd0;
           end else begin
             timer_next = timer + 1'b1;
           end
-        end
-      end
-
-      ST_REOPENING: begin
-        fsm_cmd = CMD_OPEN;
-        if (timer >= OPEN_TICKS - 1) begin
-          if (pest) begin
-            // Stay open while pest is still present
-            state_next = ST_OPEN;
-            timer_next = 32'd0;
-          end else begin
-            state_next = ST_IDLE;
-            timer_next = 32'd0;
-          end
-        end else begin
-          timer_next = timer + 1'b1;
         end
       end
 
@@ -211,7 +199,7 @@ module birdfeeder_top #(
 
   // Tiny Tapeout / demoboard 8-segment mapping:
   // uo[6:0] = {G,F,E,D,C,B,A}, uo[7] = DP
-  // Digits: 0=idle, 1=opening, 2=open, 3=closing, 4=reopening
+  // Digits: 0=idle, 1=opening, 2=open, 3=closing
   function automatic [6:0] digit7;
     input [2:0] value;
     begin
@@ -220,7 +208,6 @@ module birdfeeder_top #(
         3'd1: digit7 = 7'b0000110; // 1
         3'd2: digit7 = 7'b1011011; // 2
         3'd3: digit7 = 7'b1001111; // 3
-        3'd4: digit7 = 7'b1100110; // 4
         default: digit7 = 7'b0000000;
       endcase
     end
@@ -229,7 +216,7 @@ module birdfeeder_top #(
   assign seg = digit7(state);
 
   assign uo_out[6:0] = seg;
-  assign uo_out[7]   = pwm_enable; // DP while PWM is driving
+  assign uo_out[7]   = pwm_enable;
 
   // Bidirectional:
   //   uio[0]     = PWM output (OE only when active)

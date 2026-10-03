@@ -6,8 +6,8 @@ Cocotb tests for the door FSM (`birdfeeder_top`) and SG90 PWM driver.
 
 | TB wire | Source | Meaning |
 |---------|--------|---------|
-| `trigger` | `ui_in[0]` | Rising edge starts cycle (also `uio[1]`) |
-| `pest` | `ui_in[1]` | Forces open / blocks close (also `uio[2]`) |
+| `trigger` | `ui_in[0]` | Rising edge resets open-wait (also `uio[1]`) |
+| `pest` | `ui_in[1]` | Starts/holds open cycle (also `uio[2]`) |
 | `diag_up` | `ui_in[2]` | Hold to jog servo open/up |
 | `diag_down` | `ui_in[3]` | Hold to jog servo close/down |
 | `seg` | `uo_out[6:0]` | 7-seg digit for FSM state |
